@@ -2,6 +2,7 @@ use bevy::prelude::*;
 use bevy_ecs_tilemap::prelude::*;
 use components::life_cell::{LifeCell, LifeCellType};
 use rand::Rng;
+use types::{CellDir::*, CellNeighbors};
 
 mod components;
 mod helpers;
@@ -15,7 +16,7 @@ fn startup(mut commands: Commands, asset_server: Res<AssetServer>) {
 
     let map_size = TilemapSize { x: 128, y: 128 };
 
-    let mut soil_storage = TileStorage::empty(map_size);
+    let mut cell_storage = TileStorage::empty(map_size);
     let soil_entity = commands.spawn_empty().id();
 
     let mut rng = rand::thread_rng();
@@ -32,14 +33,14 @@ fn startup(mut commands: Commands, asset_server: Res<AssetServer>) {
                     ..Default::default()
                 })
                 .id();
-            soil_storage.set(&tile_pos, tile_entity);
+            cell_storage.set(&tile_pos, tile_entity);
         }
     }
 
     let tile_pos = TilePos { x: 64, y: 64 };
     commands
-        .entity(soil_storage.get(&tile_pos).unwrap())
-        .insert(LifeCell::new(LifeCellType::Cancer, 5., None));
+        .entity(cell_storage.get(&tile_pos).unwrap())
+        .insert(LifeCell::new(LifeCellType::Cancer, 50., None));
 
     let tile_size = TilemapTileSize { x: 16.0, y: 16.0 };
     let grid_size = tile_size.into();
@@ -49,7 +50,7 @@ fn startup(mut commands: Commands, asset_server: Res<AssetServer>) {
         grid_size,
         map_type,
         size: map_size,
-        storage: soil_storage,
+        storage: cell_storage,
         texture: TilemapTexture::Single(texture_handle),
         tile_size,
         transform: get_tilemap_center_transform(&map_size, &grid_size, &map_type, 0.0),
@@ -59,20 +60,79 @@ fn startup(mut commands: Commands, asset_server: Res<AssetServer>) {
 
 fn update(
     mut commands: Commands,
-    mut tile_storage_query: Query<(&TileStorage, &TilemapSize)>,
-    tile_query: Query<(Entity, &TilePos, &TileTextureIndex, &mut LifeCell)>,
+    mut tile_storage_query: Query<&TileStorage>,
+    mut cell_query: Query<(Entity, &TilePos, &TileTextureIndex, &mut LifeCell)>,
 ) {
-    let (tile_storage, map_size) = tile_storage_query.single_mut();
+    let cell_storage = tile_storage_query.single_mut();
 
-    for (entity, position, texture_id, life_cell) in tile_query.iter() {
-        // let neighbor_count = Neighbors::get_square_neighboring_positions(position, map_size, true)
-        //     .entities(tile_storage)
-        //     .iter()
-        //     .filter(|neighbor| {
-        //         let (_, _, index) = tile_query.get(**neighbor).unwrap();
-        //         *index == TileTextureIndex(1)
-        //     })
-        //     .count();
+    for (entity, position, texture_id, mut life_cell) in cell_query.iter_mut() {
+        {
+            let neighbors = CellNeighbors::new(position, &cell_storage);
+
+            #[macro_export]
+            macro_rules! get_cell {
+                ($dir: ident) => {{
+                    match neighbors.get($dir) {
+                        Some(up) => match cell_query.get_mut(up) {
+                            Ok(up) => Some(up),
+                            Err(_) => None,
+                        },
+                        None => None,
+                    }
+                }};
+            }
+
+            #[macro_export]
+            macro_rules! kill_cell {
+                () => {
+                    if let Some((_, _, _, mut cell)) = get_cell!(Up) {
+                        cell.energy_to.1 = false;
+                    }
+
+                    if let Some((_, _, _, mut cell)) = get_cell!(Down) {
+                        cell.energy_to.0 = false;
+                    }
+
+                    if let Some((_, _, _, mut cell)) = get_cell!(Left) {
+                        cell.energy_to.3 = false;
+                    }
+
+                    if let Some((_, _, _, mut cell)) = get_cell!(Right) {
+                        cell.energy_to.2 = false;
+                    }
+
+                    commands.entity(entity).despawn();
+                };
+            }
+
+            // Dying
+            if life_cell.energy < life_cell.cell.consumption() {
+                kill_cell!();
+                return;
+            }
+
+            // Energy processing
+            {
+                // Consumption
+                let consumption = life_cell.cell.consumption();
+                life_cell.energy -= consumption;
+
+                // Routes remap
+                if matches!(life_cell.energy_to, (false, false, false, false)) {
+                    match &life_cell.parent {
+                        Some(parent) => match parent {
+                            types::CellDir::Up => todo!(),
+                            types::CellDir::Down => todo!(),
+                            types::CellDir::Left => todo!(),
+                            types::CellDir::Right => todo!(),
+                        },
+                        None => {
+                            // kill_cell!();
+                        }
+                    };
+                }
+            }
+        }
 
         let new_texture_id = life_cell.texture_id();
 

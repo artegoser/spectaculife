@@ -1,11 +1,12 @@
-use bevy::prelude::Entity;
+use bevy::prelude::{Entity, Query};
 use bevy_ecs_tilemap::{
     map::TilemapSize,
-    tiles::{TilePos, TileStorage},
+    tiles::{TilePos, TileStorage, TileTextureIndex},
 };
 
-use crate::utils::get_continual_coord;
+use crate::{components::life_cell::LifeCell, utils::get_continual_coord};
 
+#[derive(Debug, Clone)]
 pub enum CellDir {
     Up,
     Down,
@@ -13,6 +14,7 @@ pub enum CellDir {
     Right,
 }
 
+#[derive(Debug, Clone)]
 pub struct CellNeighbors<'a> {
     up: TilePos,
     down: TilePos,
@@ -23,9 +25,9 @@ pub struct CellNeighbors<'a> {
 }
 
 impl<'a> CellNeighbors<'a> {
-    pub fn new(tile_pos: &TilePos, storage: &'a TileStorage) -> CellNeighbors<'a> {
-        let x = tile_pos.x;
-        let y = tile_pos.y;
+    pub fn new(position: &TilePos, storage: &'a TileStorage) -> CellNeighbors<'a> {
+        let x = position.x;
+        let y = position.y;
 
         let width = storage.size.x;
         let height = storage.size.y;
@@ -40,19 +42,12 @@ impl<'a> CellNeighbors<'a> {
         }
     }
 
-    pub fn get_up(&self) -> Entity {
-        self.storage.get(&self.up).unwrap()
-    }
-
-    pub fn get_down(&self) -> Entity {
-        self.storage.get(&self.down).unwrap()
-    }
-
-    pub fn get_left(&self) -> Entity {
-        self.storage.get(&self.down).unwrap()
-    }
-
-    pub fn get_right(&self) -> Entity {
-        self.storage.get(&self.down).unwrap()
+    pub fn get(&self, dir: CellDir) -> Option<Entity> {
+        match dir {
+            CellDir::Up => self.storage.get(&self.up),
+            CellDir::Down => self.storage.get(&self.down),
+            CellDir::Left => self.storage.get(&self.left),
+            CellDir::Right => self.storage.get(&self.right),
+        }
     }
 }
