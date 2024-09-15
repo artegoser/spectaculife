@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-bevy = { version = "0.14.2", features = ["dynamic_linking"] }
-bevy_ecs_tilemap = "0.14.0"
+bevy = { version = "0.13", features = ["dynamic_linking"] }
+bevy_fast_tilemap = "0.7.6"
 rand = "0.8.5"
 
 [profile.dev]

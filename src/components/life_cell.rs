@@ -1,7 +1,5 @@
-use bevy::prelude::*;
-use bevy_ecs_tilemap::prelude::*;
-
 use crate::types::CellDir;
+use bevy::prelude::*;
 
 #[derive(Debug, Clone, Component)]
 pub struct LifeCell {
@@ -24,7 +22,7 @@ impl LifeCell {
         }
     }
 
-    pub fn texture_id(&self) -> TileTextureIndex {
+    pub fn texture_id(&self) -> u32 {
         self.cell.texture_id()
     }
 }
@@ -36,10 +34,10 @@ pub enum LifeCellType {
 }
 
 impl LifeCellType {
-    pub const fn texture_id(&self) -> TileTextureIndex {
-        TileTextureIndex(match self {
+    pub const fn texture_id(&self) -> u32 {
+        match self {
             LifeCellType::Cancer => 6,
-        })
+        }
     }
 
     pub const fn consumption(&self) -> f32 {
