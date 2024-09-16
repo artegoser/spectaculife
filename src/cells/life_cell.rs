@@ -1,9 +1,8 @@
 use crate::types::CellDir;
-use bevy::prelude::*;
 
-#[derive(Debug, Clone, Component)]
+#[derive(Debug, Clone, Copy)]
 pub struct LifeCell {
-    pub cell: LifeCellType,
+    pub ty: LifeCellType,
 
     pub energy: f32,
 
@@ -14,7 +13,7 @@ pub struct LifeCell {
 impl LifeCell {
     pub fn new(cell: LifeCellType, energy: f32, parent: Option<CellDir>) -> Self {
         Self {
-            cell,
+            ty: cell,
             energy,
 
             energy_to: (false, false, false, false),
@@ -23,11 +22,11 @@ impl LifeCell {
     }
 
     pub fn texture_id(&self) -> u32 {
-        self.cell.texture_id()
+        self.ty.texture_id()
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum LifeCellType {
     // Pipe(PipeCell),
     Cancer,

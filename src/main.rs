@@ -4,18 +4,17 @@ use bevy::{
     prelude::*,
 };
 use bevy_fast_tilemap::{FastTileMapPlugin, Map, MapBundleManaged};
-use components::life_cell::{LifeCell, LifeCellType::*};
-use grid::Grid;
+use cells::life_cell::{LifeCell, LifeCellType::*};
+use grid::{Area, Grid};
 use types::{CellDir::*, Settings};
+use update::update_area;
 
-mod components;
+mod cells;
 mod grid;
 mod helpers;
 mod types;
+mod update;
 mod utils;
-
-const HEIGHT: u32 = 128;
-const WIDTH: u32 = 128;
 
 fn startup(
     mut commands: Commands,
@@ -25,6 +24,8 @@ fn startup(
     settings: Res<Settings>,
 ) {
     commands.spawn(Camera2dBundle::default());
+
+    *life = Grid::<Option<LifeCell>>::new(settings.w, settings.h);
 
     let map = Map::builder(
         uvec2(settings.w, settings.h),
@@ -66,14 +67,20 @@ fn update(
         map.indexer_mut()
     };
 
+    let prev_life = life.clone();
+
     for x in 0..settings.w {
         for y in 0..settings.h {
-            if let Some(cell) = life.get_mut(x as i64, y as i64).clone() {
-                match cell.cell {
-                    Cancer => {
-                        let up = life.get_mut(x as i64, y as i64 - 1);
+            let prev_area = Area::new(&prev_life, x, y);
+            let mut area = prev_area.clone();
 
-                        *up = Some(LifeCell::new(Cancer, 5., Some(Down)))
+            if let Some(cell) = area.center {
+                match cell.ty {
+                    Cancer => {
+                        area.up = Some(LifeCell::new(Cancer, 5., Some(Down)));
+
+                        life.set(x as i64, y as i64 - 1, area.up);
+                        life.set(x as i64, y as i64 + 1, area.down);
                     }
                 }
 
@@ -102,10 +109,7 @@ fn main() {
         .add_systems(FixedUpdate, update)
         // Performance-wise you can step this much faster but it'd require an epillepsy warning.
         .insert_resource(Time::<Fixed>::from_seconds(0.2))
-        .insert_resource(Grid::<Option<LifeCell>>::new(WIDTH, HEIGHT))
-        .insert_resource(Settings {
-            w: WIDTH,
-            h: HEIGHT,
-        })
+        .insert_resource(Grid::<Option<LifeCell>>::new(0, 0))
+        .insert_resource(Settings { w: 128, h: 128 })
         .run();
 }
