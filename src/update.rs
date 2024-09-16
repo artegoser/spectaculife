@@ -1,5 +1,8 @@
-use bevy::log::warn;
-use rand::Rng;
+use bevy::{
+    log::{debug, warn},
+    render::settings,
+};
+use rand::{random, Rng};
 
 use crate::{
     cells::{
@@ -15,75 +18,90 @@ use crate::{
 };
 
 pub fn update_area(mut area: Area<WorldCell>) -> Area<WorldCell> {
-    let mut rng = rand::thread_rng();
-
     if let Alive(mut life) = area.center.life {
-        if life.energy < life.consumption() {
+        life.energy -= life.consumption();
+
+        if life.energy < 0. {
             return kill(area);
         }
 
-        life.energy -= life.consumption();
+        // Reroute energy
+        {
+            if life.energy_to.branches_amount() == 0 && !matches!(life.ty, Cancer) {
+                match life.parent {
+                    Some(dir) => match dir {
+                        Up => life.energy_to.up = true,
+                        Down => life.energy_to.down = true,
+                        Left => life.energy_to.left = true,
+                        Right => life.energy_to.right = true,
+                    },
+                    None => {}
+                };
+            };
+        }
 
-        //
-        if matches!(
-            life.energy_to,
-            EnergyDirections {
-                up: false,
-                down: false,
-                left: false,
-                right: false
+        area.center.life = Alive(life);
+
+        // Transfer energy
+        if life.energy_to.branches_amount() > 0 {
+            area = transfer_energy(area);
+        }
+
+        // Process fertile cells
+        match life.ty {
+            Cancer => {
+                let dir = random::<CellDir>();
+
+                if matches!(area.direction(&dir).life, Dead) {
+                    area = try_born(area, dir, Cancer)
+                }
             }
-        ) {
-            match life.parent {
-                Some(dir) => match dir {
-                    Up => life.energy_to.up = true,
-                    Down => life.energy_to.down = true,
-                    Left => life.energy_to.left = true,
-                    Right => life.energy_to.right = true,
-                },
-                None => return kill(area),
+        }
+    }
+
+    area
+}
+
+/// Transfer energy
+fn transfer_energy(mut area: Area<WorldCell>) -> Area<WorldCell> {
+    if let Alive(mut life) = area.center.life {
+        let flow_each = {
+            let to_flow = life.energy * 0.25;
+
+            life.energy -= to_flow;
+
+            if life.energy < life.consumption() {
+                return area;
+            }
+
+            to_flow / (life.energy_to.branches_amount() as f32)
+        };
+
+        if life.energy_to.up {
+            if let Alive(mut life) = area.up.life {
+                life.energy += flow_each;
+                area.up.life = Alive(life);
             }
         }
 
-        match life.ty {
-            Cancer => {
-                let n = rng.gen_range(0..4);
+        if life.energy_to.down {
+            if let Alive(mut life) = area.down.life {
+                life.energy += flow_each;
+                area.down.life = Alive(life);
+            }
+        }
 
-                if matches!((area.up.life, n), (Dead, 0)) {
-                    area.up.life = Alive(AliveCell::new(
-                        LifeType::Cancer,
-                        5.,
-                        Some(Down),
-                        EnergyDirections::default(),
-                    ))
-                }
+        if life.energy_to.left {
+            if let Alive(mut life) = area.left.life {
+                life.energy += flow_each;
+                area.left.life = Alive(life);
+            }
+        }
 
-                if matches!((area.down.life, n), (Dead, 1)) {
-                    area.down.life = Alive(AliveCell::new(
-                        LifeType::Cancer,
-                        5.,
-                        Some(Up),
-                        EnergyDirections::default(),
-                    ))
-                }
-
-                if matches!((area.left.life, n), (Dead, 2)) {
-                    area.left.life = Alive(AliveCell::new(
-                        LifeType::Cancer,
-                        5.,
-                        Some(Right),
-                        EnergyDirections::default(),
-                    ))
-                }
-
-                if matches!((area.right.life, n), (Dead, 3)) {
-                    area.right.life = Alive(AliveCell::new(
-                        LifeType::Cancer,
-                        5.,
-                        Some(Left),
-                        EnergyDirections::default(),
-                    ))
-                }
+        if life.energy_to.right {
+            if let Alive(mut life) = area.right.life {
+                life.energy += flow_each;
+                area.right.life = Alive(life);
             }
         }
 
@@ -100,7 +118,6 @@ fn try_born(mut area: Area<WorldCell>, direction: CellDir, life_type: LifeType) 
 
         if life.energy > to_produce_energy {
             life.energy -= to_produce_energy;
-
             life.ty = match life.ty {
                 Cancer => Cancer,
 
@@ -110,16 +127,23 @@ fn try_born(mut area: Area<WorldCell>, direction: CellDir, life_type: LifeType) 
                 }
             };
 
+            match direction {
+                Up => life.energy_to.up = true,
+                Down => life.energy_to.down = true,
+                Left => life.energy_to.left = true,
+                Right => life.energy_to.right = true,
+            };
+
             let new_cell = {
                 let new_cell_energy_directions = match life_type {
                     Cancer => EnergyDirections::default(),
                 };
 
                 let new_cell_energy = match direction {
-                    Up => life_type.consumption() + area.up.life.energy() * 0.5,
-                    Down => life_type.consumption() + area.down.life.energy() * 0.5,
-                    Left => life_type.consumption() + area.left.life.energy() * 0.5,
-                    Right => life_type.consumption() + area.right.life.energy() * 0.5,
+                    Up => to_produce_energy * 0.8 + area.up.life.energy() * 0.5,
+                    Down => to_produce_energy * 0.8 + area.down.life.energy() * 0.5,
+                    Left => to_produce_energy * 0.8 + area.left.life.energy() * 0.5,
+                    Right => to_produce_energy * 0.8 + area.right.life.energy() * 0.5,
                 };
 
                 Alive(AliveCell::new(

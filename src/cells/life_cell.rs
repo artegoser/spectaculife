@@ -86,3 +86,27 @@ pub struct EnergyDirections {
     pub left: bool,
     pub right: bool,
 }
+
+impl EnergyDirections {
+    pub const fn branches_amount(&self) -> u8 {
+        let mut total = 0;
+
+        if self.up {
+            total += 1
+        };
+
+        if self.down {
+            total += 1
+        };
+
+        if self.left {
+            total += 1
+        };
+
+        if self.right {
+            total += 1
+        };
+
+        total
+    }
+}

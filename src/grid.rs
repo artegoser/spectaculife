@@ -1,7 +1,7 @@
 use bevy::prelude::Resource;
 
 use crate::{
-    types::{Coord, Settings},
+    types::{CellDir, Coord, Settings},
     utils::get_continual_coord,
 };
 
@@ -76,7 +76,7 @@ pub struct Area<T> {
 }
 
 impl<T: std::default::Default + std::clone::Clone + std::marker::Copy> Area<T> {
-    pub fn new(grid: &Grid<T>, x: u32, y: u32) -> Self {
+    pub fn new(grid: &mut Grid<T>, x: u32, y: u32) -> Self {
         Self {
             up: *grid.get(x as i64, y as i64 - 1),
             left: *grid.get(x as i64 - 1, y as i64),
@@ -121,6 +121,15 @@ impl<T: std::default::Default + std::clone::Clone + std::marker::Copy> Area<T> {
         Coord {
             x: self.x,
             y: self.y,
+        }
+    }
+
+    pub const fn direction(&self, dir: &CellDir) -> T {
+        match dir {
+            CellDir::Up => self.up,
+            CellDir::Down => self.down,
+            CellDir::Left => self.left,
+            CellDir::Right => self.right,
         }
     }
 }

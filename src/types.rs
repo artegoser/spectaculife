@@ -1,4 +1,8 @@
 use bevy::prelude::Resource;
+use rand::{
+    distributions::{Distribution, Standard},
+    Rng,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CellDir {
@@ -15,6 +19,17 @@ impl CellDir {
             CellDir::Down => CellDir::Up,
             CellDir::Left => CellDir::Right,
             CellDir::Right => CellDir::Left,
+        }
+    }
+}
+
+impl Distribution<CellDir> for Standard {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> CellDir {
+        match rng.gen_range(0..=4) {
+            0 => CellDir::Up,
+            1 => CellDir::Down,
+            2 => CellDir::Left,
+            _ => CellDir::Right,
         }
     }
 }

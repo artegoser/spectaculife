@@ -40,7 +40,8 @@ fn startup(
             for y in 0..settings.h {
                 if x == 64 && y == 64 {
                     let cell = world.get_mut(x as i64, y as i64);
-                    let life_cell = AliveCell::new(Cancer, 5., None, EnergyDirections::default());
+                    let life_cell =
+                        AliveCell::new(Cancer, 50000., None, EnergyDirections::default());
                     m.set(x, y, life_cell.texture_id());
                     cell.life = LifeCell::Alive(life_cell);
                     continue;
@@ -72,11 +73,9 @@ fn update(
         map.indexer_mut()
     };
 
-    let prev_life = life.clone();
-
     for x in 0..settings.w {
         for y in 0..settings.h {
-            let prev_area = Area::new(&prev_life, x, y);
+            let prev_area = Area::new(&mut life, x, y);
             let new_area = update_area(prev_area.clone());
 
             macro_rules! check_update {
