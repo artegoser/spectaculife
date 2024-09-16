@@ -4,10 +4,14 @@ use bevy::{
     prelude::*,
 };
 use bevy_fast_tilemap::{FastTileMapPlugin, Map, MapBundleManaged};
-use cells::life_cell::{LifeCell, LifeCellType::*};
+use cells::{
+    life_cell::{AliveLifeCell, LifeCell, LifeCellType::*},
+    WorldCell,
+};
 use grid::{Area, Grid};
 use types::{CellDir::*, Settings};
 use update::update_area;
+use utils::get_continual_coord;
 
 mod cells;
 mod grid;
@@ -20,12 +24,12 @@ fn startup(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut materials: ResMut<Assets<Map>>,
-    mut life: ResMut<Grid<Option<LifeCell>>>,
+    mut world: ResMut<Grid<WorldCell>>,
     settings: Res<Settings>,
 ) {
     commands.spawn(Camera2dBundle::default());
 
-    *life = Grid::<Option<LifeCell>>::new(settings.w, settings.h);
+    *world = Grid::<WorldCell>::new(settings.w, settings.h);
 
     let map = Map::builder(
         uvec2(settings.w, settings.h),
@@ -36,8 +40,10 @@ fn startup(
         for x in 0..settings.w {
             for y in 0..settings.h {
                 if x == 64 && y == 64 {
-                    life.set(x as i64, y as i64, Some(LifeCell::new(Cancer, 5., None)));
-                    m.set(x, y, 6);
+                    let cell = world.get_mut(x as i64, y as i64);
+                    let life_cell = AliveLifeCell::new(Cancer, 5., None);
+                    m.set(x, y, life_cell.texture_id());
+                    cell.life = LifeCell::Alive(life_cell);
                     continue;
                 }
 
@@ -55,7 +61,7 @@ fn startup(
 fn update(
     mut map_materials: ResMut<Assets<Map>>,
     map: Query<&Handle<Map>>,
-    mut life: ResMut<Grid<Option<LifeCell>>>,
+    mut life: ResMut<Grid<WorldCell>>,
     settings: Res<Settings>,
 ) {
     let mut map = {
@@ -72,20 +78,23 @@ fn update(
     for x in 0..settings.w {
         for y in 0..settings.h {
             let prev_area = Area::new(&prev_life, x, y);
-            let mut area = prev_area.clone();
+            let new_area = update_area(prev_area.clone());
 
-            if let Some(cell) = area.center {
-                match cell.ty {
-                    Cancer => {
-                        area.up = Some(LifeCell::new(Cancer, 5., Some(Down)));
+            macro_rules! check_update {
+                ($id: ident) => {
+                    if prev_area.$id != new_area.$id {
+                        let coord = new_area.$id(&settings);
 
-                        life.set(x as i64, y as i64 - 1, area.up);
-                        life.set(x as i64, y as i64 + 1, area.down);
+                        map.set(coord.x, coord.y, new_area.$id.life.texture_id());
+                        life.uset(coord.x, coord.y, new_area.$id);
                     }
-                }
+                };
+            }
 
-                map.set(x, y, cell.texture_id());
-            };
+            check_update!(up);
+            check_update!(down);
+            check_update!(left);
+            check_update!(right);
         }
     }
 }
@@ -109,7 +118,7 @@ fn main() {
         .add_systems(FixedUpdate, update)
         // Performance-wise you can step this much faster but it'd require an epillepsy warning.
         .insert_resource(Time::<Fixed>::from_seconds(0.2))
-        .insert_resource(Grid::<Option<LifeCell>>::new(0, 0))
+        .insert_resource(Grid::<WorldCell>::new(0, 0))
         .insert_resource(Settings { w: 128, h: 128 })
         .run();
 }

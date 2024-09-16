@@ -1,6 +1,9 @@
-use bevy::prelude::Resource;
+use bevy::prelude::{Res, Resource};
 
-use crate::utils::get_continual_coord;
+use crate::{
+    types::{Coord, Settings},
+    utils::get_continual_coord,
+};
 
 #[derive(Debug, Clone, Resource)]
 pub struct Grid<T> {
@@ -59,13 +62,17 @@ impl<T: std::default::Default + std::clone::Clone> Grid<T> {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Area<T> {
     pub up: T,
-    pub left: T,
-    pub center: T,
-    pub right: T,
     pub down: T,
+    pub left: T,
+    pub right: T,
+
+    pub center: T,
+
+    pub x: u32,
+    pub y: u32,
 }
 
 impl<T: std::default::Default + std::clone::Clone + std::marker::Copy> Area<T> {
@@ -76,6 +83,44 @@ impl<T: std::default::Default + std::clone::Clone + std::marker::Copy> Area<T> {
             center: *grid.uget(x, y),
             right: *grid.get(x as i64 + 1, y as i64),
             down: *grid.get(x as i64, y as i64 + 1),
+
+            x,
+            y,
+        }
+    }
+
+    pub fn up(&self, settings: &Settings) -> Coord {
+        Coord {
+            x: self.x,
+            y: get_continual_coord(self.y as i64 - 1, settings.h),
+        }
+    }
+
+    pub fn down(&self, settings: &Settings) -> Coord {
+        Coord {
+            x: self.x,
+            y: get_continual_coord(self.y as i64 + 1, settings.h),
+        }
+    }
+
+    pub fn left(&self, settings: &Settings) -> Coord {
+        Coord {
+            x: get_continual_coord(self.x as i64 - 1, settings.w),
+            y: self.y,
+        }
+    }
+
+    pub fn right(&self, settings: &Settings) -> Coord {
+        Coord {
+            x: get_continual_coord(self.x as i64 + 1, settings.w),
+            y: self.y,
+        }
+    }
+
+    pub fn center(&self) -> Coord {
+        Coord {
+            x: self.x,
+            y: self.y,
         }
     }
 }

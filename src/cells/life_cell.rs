@@ -1,7 +1,24 @@
 use crate::types::CellDir;
 
-#[derive(Debug, Clone, Copy)]
-pub struct LifeCell {
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum LifeCell {
+    Alive(AliveLifeCell),
+
+    #[default]
+    Dead,
+}
+
+impl LifeCell {
+    pub const fn texture_id(&self) -> u32 {
+        match self {
+            Self::Alive(alive_life_cell) => alive_life_cell.texture_id(),
+            Self::Dead => 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AliveLifeCell {
     pub ty: LifeCellType,
 
     pub energy: f32,
@@ -10,7 +27,7 @@ pub struct LifeCell {
     pub parent: Option<CellDir>,
 }
 
-impl LifeCell {
+impl AliveLifeCell {
     pub fn new(cell: LifeCellType, energy: f32, parent: Option<CellDir>) -> Self {
         Self {
             ty: cell,
@@ -21,12 +38,12 @@ impl LifeCell {
         }
     }
 
-    pub fn texture_id(&self) -> u32 {
+    pub const fn texture_id(&self) -> u32 {
         self.ty.texture_id()
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum LifeCellType {
     // Pipe(PipeCell),
     Cancer,
@@ -35,7 +52,7 @@ pub enum LifeCellType {
 impl LifeCellType {
     pub const fn texture_id(&self) -> u32 {
         match self {
-            LifeCellType::Cancer => 6,
+            LifeCellType::Cancer => 7,
         }
     }
 
