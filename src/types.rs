@@ -8,6 +8,17 @@ pub enum CellDir {
     Right,
 }
 
+impl CellDir {
+    pub fn opposite(&self) -> CellDir {
+        match self {
+            CellDir::Up => CellDir::Down,
+            CellDir::Down => CellDir::Up,
+            CellDir::Left => CellDir::Right,
+            CellDir::Right => CellDir::Left,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Coord {
     pub x: u32,

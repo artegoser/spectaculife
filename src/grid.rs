@@ -1,4 +1,4 @@
-use bevy::prelude::{Res, Resource};
+use bevy::prelude::Resource;
 
 use crate::{
     types::{Coord, Settings},
@@ -117,7 +117,7 @@ impl<T: std::default::Default + std::clone::Clone + std::marker::Copy> Area<T> {
         }
     }
 
-    pub fn center(&self) -> Coord {
+    pub fn center(&self, _: &Settings) -> Coord {
         Coord {
             x: self.x,
             y: self.y,

@@ -5,13 +5,12 @@ use bevy::{
 };
 use bevy_fast_tilemap::{FastTileMapPlugin, Map, MapBundleManaged};
 use cells::{
-    life_cell::{AliveLifeCell, LifeCell, LifeCellType::*},
+    life_cell::{AliveCell, EnergyDirections, LifeCell, LifeType::*},
     WorldCell,
 };
 use grid::{Area, Grid};
-use types::{CellDir::*, Settings};
+use types::Settings;
 use update::update_area;
-use utils::get_continual_coord;
 
 mod cells;
 mod grid;
@@ -41,7 +40,7 @@ fn startup(
             for y in 0..settings.h {
                 if x == 64 && y == 64 {
                     let cell = world.get_mut(x as i64, y as i64);
-                    let life_cell = AliveLifeCell::new(Cancer, 5., None);
+                    let life_cell = AliveCell::new(Cancer, 5., None, EnergyDirections::default());
                     m.set(x, y, life_cell.texture_id());
                     cell.life = LifeCell::Alive(life_cell);
                     continue;
@@ -95,6 +94,7 @@ fn update(
             check_update!(down);
             check_update!(left);
             check_update!(right);
+            check_update!(center);
         }
     }
 }
@@ -116,8 +116,7 @@ fn main() {
         ))
         .add_systems(Startup, startup)
         .add_systems(FixedUpdate, update)
-        // Performance-wise you can step this much faster but it'd require an epillepsy warning.
-        .insert_resource(Time::<Fixed>::from_seconds(0.2))
+        .insert_resource(Time::<Fixed>::from_seconds(0.1))
         .insert_resource(Grid::<WorldCell>::new(0, 0))
         .insert_resource(Settings { w: 128, h: 128 })
         .run();
