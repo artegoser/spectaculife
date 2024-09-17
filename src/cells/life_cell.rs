@@ -51,11 +51,19 @@ impl AliveCell {
     }
 
     pub const fn texture_id(&self) -> u32 {
-        self.ty.texture_id()
+        match self.ty {
+            LifeType::Cancer => 7,
+        }
     }
 
     pub const fn consumption(&self) -> f32 {
         self.ty.consumption()
+    }
+
+    pub fn energy_flow(&self) -> f32 {
+        match self.ty {
+            LifeType::Cancer => self.energy * 0.25,
+        }
     }
 }
 
@@ -66,12 +74,6 @@ pub enum LifeType {
 }
 
 impl LifeType {
-    pub const fn texture_id(&self) -> u32 {
-        match self {
-            LifeType::Cancer => 7,
-        }
-    }
-
     pub const fn consumption(&self) -> f32 {
         match self {
             LifeType::Cancer => 1.,

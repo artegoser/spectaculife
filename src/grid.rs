@@ -89,42 +89,51 @@ impl<T: std::default::Default + std::clone::Clone + std::marker::Copy> Area<T> {
         }
     }
 
-    pub fn up(&self, settings: &Settings) -> Coord {
+    pub fn get_up_coord(&self, settings: &Settings) -> Coord {
         Coord {
             x: self.x,
             y: get_continual_coord(self.y as i64 - 1, settings.h),
         }
     }
 
-    pub fn down(&self, settings: &Settings) -> Coord {
+    pub fn get_down_coord(&self, settings: &Settings) -> Coord {
         Coord {
             x: self.x,
             y: get_continual_coord(self.y as i64 + 1, settings.h),
         }
     }
 
-    pub fn left(&self, settings: &Settings) -> Coord {
+    pub fn get_left_coord(&self, settings: &Settings) -> Coord {
         Coord {
             x: get_continual_coord(self.x as i64 - 1, settings.w),
             y: self.y,
         }
     }
 
-    pub fn right(&self, settings: &Settings) -> Coord {
+    pub fn get_right_coord(&self, settings: &Settings) -> Coord {
         Coord {
             x: get_continual_coord(self.x as i64 + 1, settings.w),
             y: self.y,
         }
     }
 
-    pub fn center(&self, _: &Settings) -> Coord {
+    pub fn get_center_coord(&self, _: &Settings) -> Coord {
         Coord {
             x: self.x,
             y: self.y,
         }
     }
 
-    pub const fn direction(&self, dir: &CellDir) -> T {
+    pub fn coord_from_dir(&self, dir: &CellDir, settings: &Settings) -> Coord {
+        match dir {
+            CellDir::Up => self.get_up_coord(settings),
+            CellDir::Down => self.get_down_coord(settings),
+            CellDir::Left => self.get_left_coord(settings),
+            CellDir::Right => self.get_right_coord(settings),
+        }
+    }
+
+    pub const fn cell_from_dir(&self, dir: &CellDir) -> T {
         match dir {
             CellDir::Up => self.up,
             CellDir::Down => self.down,

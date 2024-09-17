@@ -9,7 +9,8 @@ use cells::{
     WorldCell,
 };
 use grid::{Area, Grid};
-use types::Settings;
+use rand::seq::IteratorRandom;
+use types::{CellDir::*, Settings};
 use update::update_area;
 
 mod cells;
@@ -64,6 +65,8 @@ fn update(
     mut life: ResMut<Grid<WorldCell>>,
     settings: Res<Settings>,
 ) {
+    let mut rng = rand::thread_rng();
+
     let mut map = {
         let Some(map) = map_materials.get_mut(map.single()) else {
             warn!("No map material");
@@ -73,27 +76,39 @@ fn update(
         map.indexer_mut()
     };
 
-    for x in 0..settings.w {
-        for y in 0..settings.h {
-            let prev_area = Area::new(&mut life, x, y);
+    let x_rand = (0..settings.w).choose_multiple(&mut rng, settings.w as usize);
+    let y_rand = (0..settings.h).choose_multiple(&mut rng, settings.h as usize);
+
+    for x in &x_rand {
+        for y in &y_rand {
+            let prev_area = Area::new(&mut life, *x, *y);
             let new_area = update_area(prev_area.clone());
 
             macro_rules! check_update {
-                ($id: ident) => {
-                    if prev_area.$id != new_area.$id {
-                        let coord = new_area.$id(&settings);
+                ($dir: expr) => {
+                    let dir = $dir;
+                    let prev_cell = prev_area.cell_from_dir(&dir);
+                    let new_cell = new_area.cell_from_dir(&dir);
+                    if prev_cell != new_cell {
+                        let coord = new_area.coord_from_dir(&dir, &settings);
 
-                        map.set(coord.x, coord.y, new_area.$id.life.texture_id());
-                        life.uset(coord.x, coord.y, new_area.$id);
+                        map.set(coord.x, coord.y, new_cell.life.texture_id());
+                        life.uset(coord.x, coord.y, new_cell);
                     }
                 };
             }
 
-            check_update!(up);
-            check_update!(down);
-            check_update!(left);
-            check_update!(right);
-            check_update!(center);
+            check_update!(Up);
+            check_update!(Down);
+            check_update!(Left);
+            check_update!(Right);
+
+            if prev_area.center != new_area.center {
+                let coord = new_area.get_center_coord(&settings);
+
+                map.set(coord.x, coord.y, new_area.center.life.texture_id());
+                life.uset(coord.x, coord.y, new_area.center);
+            }
         }
     }
 }

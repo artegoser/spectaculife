@@ -1,8 +1,5 @@
-use bevy::{
-    log::{debug, warn},
-    render::settings,
-};
-use rand::{random, Rng};
+use bevy::log::warn;
+use rand::random;
 
 use crate::{
     cells::{
@@ -52,7 +49,7 @@ pub fn update_area(mut area: Area<WorldCell>) -> Area<WorldCell> {
             Cancer => {
                 let dir = random::<CellDir>();
 
-                if matches!(area.direction(&dir).life, Dead) {
+                if matches!(area.cell_from_dir(&dir).life, Dead) {
                     area = try_born(area, dir, Cancer)
                 }
             }
@@ -66,7 +63,7 @@ pub fn update_area(mut area: Area<WorldCell>) -> Area<WorldCell> {
 fn transfer_energy(mut area: Area<WorldCell>) -> Area<WorldCell> {
     if let Alive(mut life) = area.center.life {
         let flow_each = {
-            let to_flow = life.energy * 0.25;
+            let to_flow = life.energy_flow();
 
             life.energy -= to_flow;
 
