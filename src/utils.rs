@@ -1,6 +1,6 @@
 use bevy::{
     asset::{Assets, Handle},
-    prelude::{Query, ResMut},
+    prelude::Query,
 };
 use bevy_fast_tilemap::{Map, MapIndexer};
 
@@ -22,9 +22,9 @@ pub fn get_map<'a>(
     id: usize,
 ) -> MapIndexer<'a> {
     let map_handle = maps.iter().nth(id).unwrap();
-    let map_materials_ref = unsafe { &mut *map_materials };
+    let map_materials = unsafe { &mut *map_materials };
 
-    let Some(map) = map_materials_ref.get_mut(map_handle) else {
+    let Some(map) = map_materials.get_mut(map_handle) else {
         panic!("No map material");
     };
 

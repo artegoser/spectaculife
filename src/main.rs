@@ -1,6 +1,6 @@
 use bevy::{
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
-    math::{uvec2, vec2},
+    math::{uvec2, vec2, vec3},
     prelude::*,
 };
 use bevy_fast_tilemap::{FastTileMapPlugin, Map, MapBundleManaged};
@@ -40,10 +40,14 @@ fn startup(
     .build_and_initialize(|m| {
         for x in 0..settings.w {
             for y in 0..settings.h {
-                if x == 64 && y == 64 {
+                if x % 8 == 0 && y % 8 == 0 {
                     let cell = world.get_mut(x as i64, y as i64);
-                    let life_cell =
-                        AliveCell::new(Cancer, 500000., None, EnergyDirections::default());
+                    let life_cell = AliveCell::new(
+                        StemCell(rand::random()),
+                        5000.,
+                        None,
+                        EnergyDirections::default(),
+                    );
                     cell.life = LifeCell::Alive(life_cell);
                 }
 
@@ -72,6 +76,7 @@ fn startup(
 
     commands.spawn(MapBundleManaged {
         material: materials.add(cell_map),
+        transform: Transform::default().with_translation(vec3(0., 0., 1.)),
         ..default()
     });
 }
@@ -83,16 +88,6 @@ fn update(
     settings: Res<Settings>,
 ) {
     let mut rng = rand::thread_rng();
-
-    // let mut map = {
-    //     let Some(map) = map_materials.get_mut(map.iter().nth(1).unwrap()) else {
-    //         warn!("No map material");
-    //         return;
-    //     };
-
-    //     map.indexer_mut()
-    // };
-    //
 
     let mut soil_map = get_map(&maps, &mut *map_materials, 0);
     let mut life_map = get_map(&maps, &mut *map_materials, 1);
@@ -115,14 +110,21 @@ fn update(
                     let new_cell = new_area.cell_from_dir(&dir);
                     if prev_cell != new_cell {
                         let coord = new_area.coord_from_dir(&dir, &settings);
-                        life_map.set(
-                            coord.x,
-                            coord.y,
-                            new_cell
-                                .life
-                                .texture_id(Area::new(&mut life, coord.x, coord.y)),
-                        );
                         life.uset(coord.x, coord.y, new_cell);
+
+                        if prev_cell.soil != new_cell.soil {
+                            soil_map.set(coord.x, coord.y, new_cell.soil.texture_id());
+                        }
+
+                        if prev_cell.life != new_cell.life {
+                            life_map.set(
+                                coord.x,
+                                coord.y,
+                                new_cell
+                                    .life
+                                    .texture_id(Area::new(&mut life, coord.x, coord.y)),
+                            );
+                        }
                     }
                 };
             }
@@ -136,12 +138,12 @@ fn update(
                 let coord = new_area.get_center_coord();
                 life.uset(coord.x, coord.y, new_area.center);
 
-                if prev_area.center.life != new_area.center.life {
-                    life_map.set(coord.x, coord.y, new_area.center.life.texture_id(new_area));
-                }
-
                 if prev_area.center.soil != new_area.center.soil {
                     soil_map.set(coord.x, coord.y, new_area.center.soil.texture_id());
+                }
+
+                if prev_area.center.life != new_area.center.life {
+                    life_map.set(coord.x, coord.y, new_area.center.life.texture_id(new_area));
                 }
             }
         }
@@ -167,6 +169,6 @@ fn main() {
         .add_systems(FixedUpdate, update)
         .insert_resource(Time::<Fixed>::from_seconds(0.1))
         .insert_resource(Grid::<WorldCell>::new(0, 0))
-        .insert_resource(Settings { w: 128, h: 128 })
+        .insert_resource(Settings { w: 256, h: 256 })
         .run();
 }

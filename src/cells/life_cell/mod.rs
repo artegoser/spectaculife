@@ -1,6 +1,10 @@
+use genome::Genome;
+
 use crate::{grid::Area, types::CellDir, utils::merge_energy};
 
 use super::WorldCell;
+
+mod genome;
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum LifeCell {
@@ -15,6 +19,20 @@ impl LifeCell {
         match self {
             Self::Alive(alive_life_cell) => alive_life_cell.texture_id(area),
             Self::Dead => 0,
+        }
+    }
+
+    pub const fn is_fertile(&self) -> bool {
+        match self {
+            Self::Alive(alive_cell) => alive_cell.is_fertile(),
+            Self::Dead => false,
+        }
+    }
+
+    pub const fn is_pipe(&self) -> bool {
+        match self {
+            Self::Alive(alive_cell) => alive_cell.is_pipe(),
+            Self::Dead => false,
         }
     }
 
@@ -61,7 +79,7 @@ impl AliveCell {
 
     pub const fn texture_id(&self, area: Area<WorldCell>) -> u32 {
         match self.ty {
-            LifeType::Pipe => match merge_energy(&area, self.energy_to).to_tuple() {
+            LifeType::Pipe => match self.energy_to.to_tuple() {
                 (false, false, false, false) => 7,
                 (true, true, false, false) => 8,
                 (false, false, true, true) => 9,
@@ -81,7 +99,16 @@ impl AliveCell {
             },
             LifeType::Leaf => 2,
             LifeType::Cancer => 6,
+            LifeType::StemCell(_) => 1,
         }
+    }
+
+    pub const fn is_pipe(&self) -> bool {
+        self.ty.is_pipe()
+    }
+
+    pub const fn is_fertile(&self) -> bool {
+        self.ty.is_fertile()
     }
 
     pub const fn consumption(&self) -> f32 {
@@ -97,15 +124,32 @@ impl AliveCell {
 pub enum LifeType {
     Pipe,
     Leaf,
+
+    StemCell(Genome),
     Cancer,
 }
 
 impl LifeType {
+    pub const fn is_pipe(&self) -> bool {
+        match self {
+            LifeType::Pipe | LifeType::Cancer => true,
+            _ => false,
+        }
+    }
+
+    pub const fn is_fertile(&self) -> bool {
+        match self {
+            LifeType::StemCell(_) | LifeType::Cancer => true,
+            _ => false,
+        }
+    }
+
     pub const fn consumption(&self) -> f32 {
         match self {
             LifeType::Pipe => 0.1,
             LifeType::Leaf => 0.5,
             LifeType::Cancer => 1.,
+            LifeType::StemCell(_) => 0.1,
         }
     }
 
@@ -114,6 +158,7 @@ impl LifeType {
             LifeType::Pipe => 1,
             LifeType::Leaf => 2,
             LifeType::Cancer => 3,
+            LifeType::StemCell(_) => 5,
         }
     }
 
