@@ -33,7 +33,7 @@ fn startup(
 
     let cell_map = Map::builder(
         uvec2(settings.w, settings.h),
-        asset_server.load("cells.png"),
+        asset_server.load("life.png"),
         vec2(16., 16.),
     )
     .build_and_initialize(|m| {
@@ -42,7 +42,7 @@ fn startup(
                 if x == 64 && y == 64 {
                     let cell = world.get_mut(x as i64, y as i64);
                     let life_cell =
-                        AliveCell::new(Cancer, 50000., None, EnergyDirections::default());
+                        AliveCell::new(Cancer, 500000., None, EnergyDirections::default());
                     cell.life = LifeCell::Alive(life_cell);
                 }
 
