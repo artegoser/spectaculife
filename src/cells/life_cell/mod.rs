@@ -36,6 +36,13 @@ impl LifeCell {
         }
     }
 
+    pub const fn is_alive(&self) -> bool {
+        match self {
+            Self::Alive(alive_cell) => false,
+            Self::Dead => false,
+        }
+    }
+
     pub const fn energy(&self) -> f32 {
         match self {
             Self::Alive(alive_cell) => alive_cell.energy,
@@ -166,20 +173,24 @@ impl LifeType {
         2. * self.consumption()
     }
 
-    pub fn make_newborn_cell(self, parent_dir: CellDir, energy: f32) -> LifeCell {
+    pub fn make_newborn_cell(self, parent_dir: CellDir, energy: f32) -> (LifeCell, f32) {
         let new_cell_energy_directions = match self {
             Self::Leaf => EnergyDirections::from_direction(&parent_dir),
             _ => EnergyDirections::default(),
         };
+        let capacity = self.birth_capacity();
 
-        let new_cell_energy = self.birth_capacity() * 0.8 + energy * 0.5;
+        let new_cell_energy = capacity * 0.8 + energy * 0.5;
 
-        LifeCell::Alive(AliveCell::new(
-            self,
-            new_cell_energy,
-            Some(parent_dir),
-            new_cell_energy_directions,
-        ))
+        (
+            LifeCell::Alive(AliveCell::new(
+                self,
+                new_cell_energy,
+                Some(parent_dir),
+                new_cell_energy_directions,
+            )),
+            capacity,
+        )
     }
 }
 

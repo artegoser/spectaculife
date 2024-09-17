@@ -76,7 +76,7 @@ pub fn update_area(mut area: Area<WorldCell>) -> Area<WorldCell> {
         // Generate energy
         {
             match life.ty {
-                Leaf => life.energy += 2.,
+                Leaf => life.energy += 1.,
                 _ => {}
             }
         }
@@ -143,46 +143,46 @@ fn transfer_energy(mut area: Area<WorldCell>) -> Area<WorldCell> {
         };
 
         if life.energy_to.up {
-            if !area.up.life.is_pipe() && !area.up.life.is_fertile() {
-                return kill(area);
-            }
-
             if let Alive(mut up) = area.up.life {
-                up.energy += flow_each;
-                area.up.life = Alive(up);
+                if up.is_pipe() || up.is_fertile() {
+                    up.energy += flow_each;
+                    area.up.life = Alive(up);
+                } else {
+                    life.energy_to.up = false;
+                }
             }
         }
 
         if life.energy_to.down {
-            if !area.down.life.is_pipe() && !area.down.life.is_fertile() {
-                return kill(area);
-            }
-
             if let Alive(mut down) = area.down.life {
-                down.energy += flow_each;
-                area.down.life = Alive(down);
+                if down.is_pipe() || down.is_fertile() {
+                    down.energy += flow_each;
+                    area.down.life = Alive(down);
+                } else {
+                    life.energy_to.down = false;
+                }
             }
         }
 
         if life.energy_to.left {
-            if !area.left.life.is_pipe() && !area.left.life.is_fertile() {
-                return kill(area);
-            }
-
             if let Alive(mut left) = area.left.life {
-                left.energy += flow_each;
-                area.left.life = Alive(left);
+                if left.is_pipe() || left.is_fertile() {
+                    left.energy += flow_each;
+                    area.left.life = Alive(left);
+                } else {
+                    life.energy_to.left = false;
+                }
             }
         }
 
         if life.energy_to.right {
-            if !area.right.life.is_pipe() && !area.right.life.is_fertile() {
-                return kill(area);
-            }
-
             if let Alive(mut right) = area.right.life {
-                right.energy += flow_each;
-                area.right.life = Alive(right);
+                if right.is_pipe() || right.is_fertile() {
+                    right.energy += flow_each;
+                    area.right.life = Alive(right);
+                } else {
+                    life.energy_to.right = false;
+                }
             }
         }
 
@@ -198,7 +198,7 @@ fn try_birth(mut area: Area<WorldCell>, birth_directive: BirthDirective) -> Area
         let energy_capacity = birth_directive.energy_capacity();
 
         if life.energy > energy_capacity {
-            life.energy -= energy_capacity;
+            let mut capacity = 0.;
 
             // Cell rebirth
             life.ty = match life.ty {
@@ -211,29 +211,56 @@ fn try_birth(mut area: Area<WorldCell>, birth_directive: BirthDirective) -> Area
                 if cell_type.is_fertile() {
                     life.energy_to.up = true;
                 }
-                area.up.life = cell_type.make_newborn_cell(Down, area.up.life.energy());
+                let (cell, cell_capacity) =
+                    cell_type.make_newborn_cell(Down, area.up.life.energy());
+
+                if !area.up.life.is_alive() {
+                    area.up.life = cell;
+                    capacity += cell_capacity;
+                }
             }
 
             if let Some(cell_type) = birth_directive.down {
                 if cell_type.is_fertile() {
                     life.energy_to.down = true;
                 }
-                area.down.life = cell_type.make_newborn_cell(Up, area.down.life.energy());
+                let (cell, cell_capacity) =
+                    cell_type.make_newborn_cell(Up, area.down.life.energy());
+
+                if !area.down.life.is_alive() {
+                    area.down.life = cell;
+                    capacity += cell_capacity;
+                }
             }
 
             if let Some(cell_type) = birth_directive.left {
                 if cell_type.is_fertile() {
                     life.energy_to.left = true;
                 }
-                area.left.life = cell_type.make_newborn_cell(Right, area.left.life.energy());
+                let (cell, cell_capacity) =
+                    cell_type.make_newborn_cell(Right, area.left.life.energy());
+
+                if !area.left.life.is_alive() {
+                    area.left.life = cell;
+                    capacity += cell_capacity;
+                }
             }
 
             if let Some(cell_type) = birth_directive.right {
                 if cell_type.is_fertile() {
                     life.energy_to.right = true;
                 }
-                area.right.life = cell_type.make_newborn_cell(Left, area.right.life.energy());
+
+                let (cell, cell_capacity) =
+                    cell_type.make_newborn_cell(Left, area.right.life.energy());
+
+                if !area.right.life.is_alive() {
+                    area.right.life = cell;
+                    capacity += cell_capacity;
+                }
             }
+
+            life.energy -= capacity;
         }
 
         area.center.life = Alive(life)
