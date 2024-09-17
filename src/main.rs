@@ -12,6 +12,7 @@ use grid::{Area, Grid};
 use rand::seq::{IteratorRandom, SliceRandom};
 use types::{CellDir::*, Settings};
 use update::update_area;
+use utils::get_map;
 
 mod cells;
 mod grid;
@@ -77,20 +78,24 @@ fn startup(
 
 fn update(
     mut map_materials: ResMut<Assets<Map>>,
-    map: Query<&Handle<Map>>,
+    maps: Query<&Handle<Map>>,
     mut life: ResMut<Grid<WorldCell>>,
     settings: Res<Settings>,
 ) {
     let mut rng = rand::thread_rng();
 
-    let mut map = {
-        let Some(map) = map_materials.get_mut(map.iter().nth(1).unwrap()) else {
-            warn!("No map material");
-            return;
-        };
+    // let mut map = {
+    //     let Some(map) = map_materials.get_mut(map.iter().nth(1).unwrap()) else {
+    //         warn!("No map material");
+    //         return;
+    //     };
 
-        map.indexer_mut()
-    };
+    //     map.indexer_mut()
+    // };
+    //
+
+    let mut soil_map = get_map(&maps, &mut *map_materials, 0);
+    let mut life_map = get_map(&maps, &mut *map_materials, 1);
 
     let mut x_rand: Vec<u32> = (0..settings.w).collect();
     x_rand.shuffle(&mut rng);
@@ -110,7 +115,7 @@ fn update(
                     let new_cell = new_area.cell_from_dir(&dir);
                     if prev_cell != new_cell {
                         let coord = new_area.coord_from_dir(&dir, &settings);
-                        map.set(
+                        life_map.set(
                             coord.x,
                             coord.y,
                             new_cell
@@ -128,10 +133,16 @@ fn update(
             check_update!(Right);
 
             if prev_area.center != new_area.center {
-                let coord = new_area.get_center_coord(&settings);
-
-                map.set(coord.x, coord.y, new_area.center.life.texture_id(new_area));
+                let coord = new_area.get_center_coord();
                 life.uset(coord.x, coord.y, new_area.center);
+
+                if prev_area.center.life != new_area.center.life {
+                    life_map.set(coord.x, coord.y, new_area.center.life.texture_id(new_area));
+                }
+
+                if prev_area.center.soil != new_area.center.soil {
+                    soil_map.set(coord.x, coord.y, new_area.center.soil.texture_id());
+                }
             }
         }
     }

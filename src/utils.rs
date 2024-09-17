@@ -1,3 +1,9 @@
+use bevy::{
+    asset::{Assets, Handle},
+    prelude::{Query, ResMut},
+};
+use bevy_fast_tilemap::{Map, MapIndexer};
+
 use crate::{
     cells::{
         life_cell::{EnergyDirections, LifeCell::*},
@@ -8,6 +14,21 @@ use crate::{
 
 pub fn get_continual_coord(n: i64, max: u32) -> u32 {
     (n).rem_euclid(max as i64) as u32
+}
+
+pub fn get_map<'a>(
+    maps: &Query<&Handle<Map>>,
+    map_materials: *mut Assets<Map>,
+    id: usize,
+) -> MapIndexer<'a> {
+    let map_handle = maps.iter().nth(id).unwrap();
+    let map_materials_ref = unsafe { &mut *map_materials };
+
+    let Some(map) = map_materials_ref.get_mut(map_handle) else {
+        panic!("No map material");
+    };
+
+    map.indexer_mut()
 }
 
 pub const fn merge_energy(

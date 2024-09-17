@@ -24,6 +24,13 @@ impl LifeCell {
             Self::Dead => 0.,
         }
     }
+
+    pub const fn organics(&self) -> u8 {
+        match self {
+            Self::Alive(alive_cell) => alive_cell.organics(),
+            Self::Dead => 0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -80,6 +87,10 @@ impl AliveCell {
     pub const fn consumption(&self) -> f32 {
         self.ty.consumption()
     }
+
+    pub const fn organics(&self) -> u8 {
+        self.ty.organics()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -98,6 +109,18 @@ impl LifeType {
         }
     }
 
+    pub const fn organics(&self) -> u8 {
+        match self {
+            LifeType::Pipe => 1,
+            LifeType::Leaf => 2,
+            LifeType::Cancer => 3,
+        }
+    }
+
+    pub fn birth_capacity(&self) -> f32 {
+        2. * self.consumption()
+    }
+
     pub fn make_newborn_cell(self, parent_dir: CellDir, energy: f32) -> LifeCell {
         let new_cell_energy_directions = match self {
             Self::Leaf => EnergyDirections::from_direction(&parent_dir),
@@ -112,10 +135,6 @@ impl LifeType {
             Some(parent_dir),
             new_cell_energy_directions,
         ))
-    }
-
-    pub fn birth_capacity(&self) -> f32 {
-        2. * self.consumption()
     }
 }
 

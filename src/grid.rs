@@ -117,7 +117,7 @@ impl<T: std::default::Default + std::clone::Clone + std::marker::Copy> Area<T> {
         }
     }
 
-    pub fn get_center_coord(&self, _: &Settings) -> Coord {
+    pub fn get_center_coord(&self) -> Coord {
         Coord {
             x: self.x,
             y: self.y,

@@ -200,6 +200,7 @@ fn try_birth(mut area: Area<WorldCell>, birth_directive: BirthDirective) -> Area
 
 /// Kill cell and reroute energy paths
 fn kill(mut area: Area<WorldCell>) -> Area<WorldCell> {
+    area.center.soil.organic += area.center.life.organics();
     area.center.life = Dead;
 
     // Reroute energy of neighbors
