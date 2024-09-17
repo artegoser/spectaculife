@@ -22,61 +22,58 @@ pub fn update_area(mut area: Area<WorldCell>) -> Area<WorldCell> {
             return kill(area);
         }
 
-        // Reroute energy
-        {
-            if life.energy_to.branches_amount() == 0 {
-                match life.parent {
-                    Some(parent_dir) => {
-                        if life.is_pipe() {
-                            match parent_dir {
-                                Up => {
-                                    life.energy_to.up = true;
+        if (life.energy_to.branches_amount() == 0) && !life.is_fertile() {
+            return kill(area);
+        }
 
-                                    if let Alive(mut up) = area.up.life {
-                                        up.energy_to.down = false;
-                                        area.up.life = Alive(up);
-                                    }
-                                }
-                                Down => {
-                                    life.energy_to.down = true;
-
-                                    if let Alive(mut down) = area.down.life {
-                                        down.energy_to.up = false;
-                                        area.down.life = Alive(down);
-                                    }
-                                }
-                                Left => {
-                                    life.energy_to.left = true;
-
-                                    if let Alive(mut left) = area.left.life {
-                                        left.energy_to.right = false;
-                                        area.left.life = Alive(left);
-                                    }
-                                }
-                                Right => {
-                                    life.energy_to.right = true;
-
-                                    if let Alive(mut right) = area.right.life {
-                                        right.energy_to.left = false;
-                                        area.right.life = Alive(right);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    None => {
-                        if !life.is_fertile() {
-                            return kill(area);
-                        };
-                    }
-                };
-            }
+        if area.center.soil.organic > 16 {
+            return kill(area);
         }
 
         // Generate energy
         {
             match life.ty {
-                Leaf => life.energy += 1.,
+                Leaf => life.energy += 1.8,
+                Root => {
+                    let mut total = 0.0;
+
+                    {
+                        let organic = area.center.soil.organic as f32 * 0.25;
+                        area.center.soil.organic -= organic as u8;
+
+                        total += organic;
+                    }
+
+                    {
+                        let organic = area.up.soil.organic as f32 * 0.25;
+                        area.up.soil.organic -= organic as u8;
+
+                        total += organic;
+                    }
+
+                    {
+                        let organic = area.down.soil.organic as f32 * 0.25;
+                        area.down.soil.organic -= organic as u8;
+
+                        total += organic;
+                    }
+
+                    {
+                        let organic = area.left.soil.organic as f32 * 0.25;
+                        area.left.soil.organic -= organic as u8;
+
+                        total += organic;
+                    }
+
+                    {
+                        let organic = area.right.soil.organic as f32 * 0.25;
+                        area.right.soil.organic -= organic as u8;
+
+                        total += organic;
+                    }
+
+                    life.energy += total * 0.4;
+                }
                 _ => {}
             }
         }
@@ -90,7 +87,7 @@ pub fn update_area(mut area: Area<WorldCell>) -> Area<WorldCell> {
 
         // Process fertile cells
         match life.ty {
-            StemCell(genome) => {
+            Stem(genome) => {
                 area = try_birth(
                     area,
                     genome.genes[genome.active_gene as usize].to_birth_directive(genome),
@@ -198,11 +195,11 @@ fn try_birth(mut area: Area<WorldCell>, birth_directive: BirthDirective) -> Area
         let energy_capacity = birth_directive.energy_capacity();
 
         if life.energy > energy_capacity {
-            let mut capacity = 0.;
+            life.energy -= energy_capacity;
 
             // Cell rebirth
             life.ty = match life.ty {
-                StemCell(_) => Pipe,
+                Stem(_) => Pipe,
 
                 ty => ty,
             };
@@ -211,39 +208,36 @@ fn try_birth(mut area: Area<WorldCell>, birth_directive: BirthDirective) -> Area
                 if cell_type.is_fertile() {
                     life.energy_to.up = true;
                 }
-                let (cell, cell_capacity) =
-                    cell_type.make_newborn_cell(Down, area.up.life.energy());
-
-                if !area.up.life.is_alive() {
-                    area.up.life = cell;
-                    capacity += cell_capacity;
-                }
+                area.up.soil.organic = area.up.soil.organic.saturating_add(area.up.life.organics());
+                area.up.life = cell_type.make_newborn_cell(Down, area.up.life.energy());
             }
 
             if let Some(cell_type) = birth_directive.down {
                 if cell_type.is_fertile() {
                     life.energy_to.down = true;
                 }
-                let (cell, cell_capacity) =
-                    cell_type.make_newborn_cell(Up, area.down.life.energy());
 
-                if !area.down.life.is_alive() {
-                    area.down.life = cell;
-                    capacity += cell_capacity;
-                }
+                area.down.soil.organic = area
+                    .down
+                    .soil
+                    .organic
+                    .saturating_add(area.down.life.organics());
+
+                area.down.life = cell_type.make_newborn_cell(Up, area.down.life.energy());
             }
 
             if let Some(cell_type) = birth_directive.left {
                 if cell_type.is_fertile() {
                     life.energy_to.left = true;
                 }
-                let (cell, cell_capacity) =
-                    cell_type.make_newborn_cell(Right, area.left.life.energy());
 
-                if !area.left.life.is_alive() {
-                    area.left.life = cell;
-                    capacity += cell_capacity;
-                }
+                area.left.soil.organic = area
+                    .left
+                    .soil
+                    .organic
+                    .saturating_add(area.left.life.organics());
+
+                area.left.life = cell_type.make_newborn_cell(Right, area.left.life.energy());
             }
 
             if let Some(cell_type) = birth_directive.right {
@@ -251,16 +245,14 @@ fn try_birth(mut area: Area<WorldCell>, birth_directive: BirthDirective) -> Area
                     life.energy_to.right = true;
                 }
 
-                let (cell, cell_capacity) =
-                    cell_type.make_newborn_cell(Left, area.right.life.energy());
+                area.right.soil.organic = area
+                    .right
+                    .soil
+                    .organic
+                    .saturating_add(area.right.life.organics());
 
-                if !area.right.life.is_alive() {
-                    area.right.life = cell;
-                    capacity += cell_capacity;
-                }
+                area.right.life = cell_type.make_newborn_cell(Left, area.right.life.energy());
             }
-
-            life.energy -= capacity;
         }
 
         area.center.life = Alive(life)

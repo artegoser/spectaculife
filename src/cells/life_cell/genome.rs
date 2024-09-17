@@ -57,6 +57,7 @@ impl Distribution<Gene> for Standard {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum GeneAction {
     MakeLeaf,
+    MakeRoot,
     MultiplySelf(u8),
     Nothing,
 }
@@ -65,10 +66,11 @@ impl GeneAction {
     pub fn to_life_type(&self, mut genome: Genome) -> Option<LifeType> {
         match self {
             GeneAction::MakeLeaf => Some(LifeType::Leaf),
+            GeneAction::MakeRoot => Some(LifeType::Root),
             GeneAction::MultiplySelf(next_gene) => {
                 genome.active_gene = *next_gene;
 
-                Some(LifeType::StemCell(genome))
+                Some(LifeType::Stem(genome))
             }
             GeneAction::Nothing => None,
         }
@@ -78,8 +80,9 @@ impl GeneAction {
 impl Distribution<GeneAction> for Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> GeneAction {
         match rng.gen_range(0..=100) {
-            0..=20 => GeneAction::MultiplySelf(rng.gen_range(0..MAX_GENES)),
-            21..=50 => GeneAction::MakeLeaf,
+            0..=15 => GeneAction::MultiplySelf(rng.gen_range(0..MAX_GENES)),
+            16..=30 => GeneAction::MakeLeaf,
+            31..=40 => GeneAction::MakeRoot,
             _ => GeneAction::Nothing,
         }
     }

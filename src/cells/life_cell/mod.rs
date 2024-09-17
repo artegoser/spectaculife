@@ -86,7 +86,7 @@ impl AliveCell {
 
     pub const fn texture_id(&self, area: Area<WorldCell>) -> u32 {
         match self.ty {
-            LifeType::Pipe => match self.energy_to.to_tuple() {
+            LifeType::Pipe => match merge_energy(&area, self.energy_to).to_tuple() {
                 (false, false, false, false) => 7,
                 (true, true, false, false) => 8,
                 (false, false, true, true) => 9,
@@ -106,7 +106,8 @@ impl AliveCell {
             },
             LifeType::Leaf => 2,
             LifeType::Cancer => 6,
-            LifeType::StemCell(_) => 1,
+            LifeType::Stem(_) => 1,
+            LifeType::Root => 3,
         }
     }
 
@@ -131,8 +132,9 @@ impl AliveCell {
 pub enum LifeType {
     Pipe,
     Leaf,
+    Root,
 
-    StemCell(Genome),
+    Stem(Genome),
     Cancer,
 }
 
@@ -146,7 +148,7 @@ impl LifeType {
 
     pub const fn is_fertile(&self) -> bool {
         match self {
-            LifeType::StemCell(_) | LifeType::Cancer => true,
+            LifeType::Stem(_) | LifeType::Cancer => true,
             _ => false,
         }
     }
@@ -156,7 +158,8 @@ impl LifeType {
             LifeType::Pipe => 0.1,
             LifeType::Leaf => 0.5,
             LifeType::Cancer => 1.,
-            LifeType::StemCell(_) => 0.1,
+            LifeType::Stem(_) => 0.1,
+            LifeType::Root => 0.3,
         }
     }
 
@@ -165,7 +168,8 @@ impl LifeType {
             LifeType::Pipe => 1,
             LifeType::Leaf => 2,
             LifeType::Cancer => 3,
-            LifeType::StemCell(_) => 5,
+            LifeType::Stem(_) => 5,
+            LifeType::Root => 2,
         }
     }
 
@@ -173,24 +177,20 @@ impl LifeType {
         2. * self.consumption()
     }
 
-    pub fn make_newborn_cell(self, parent_dir: CellDir, energy: f32) -> (LifeCell, f32) {
+    pub fn make_newborn_cell(self, parent_dir: CellDir, energy: f32) -> LifeCell {
         let new_cell_energy_directions = match self {
-            Self::Leaf => EnergyDirections::from_direction(&parent_dir),
+            Self::Leaf | Self::Root => EnergyDirections::from_direction(&parent_dir),
             _ => EnergyDirections::default(),
         };
-        let capacity = self.birth_capacity();
 
-        let new_cell_energy = capacity * 0.8 + energy * 0.5;
+        let new_cell_energy = self.birth_capacity() * 0.8 + energy * 0.5;
 
-        (
-            LifeCell::Alive(AliveCell::new(
-                self,
-                new_cell_energy,
-                Some(parent_dir),
-                new_cell_energy_directions,
-            )),
-            capacity,
-        )
+        LifeCell::Alive(AliveCell::new(
+            self,
+            new_cell_energy,
+            Some(parent_dir),
+            new_cell_energy_directions,
+        ))
     }
 }
 

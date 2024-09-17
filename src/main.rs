@@ -40,11 +40,11 @@ fn startup(
     .build_and_initialize(|m| {
         for x in 0..settings.w {
             for y in 0..settings.h {
-                if x % 8 == 0 && y % 8 == 0 {
+                if x % 2 == 0 && y % 2 == 0 {
                     let cell = world.get_mut(x as i64, y as i64);
                     let life_cell = AliveCell::new(
-                        StemCell(rand::random()),
-                        5000.,
+                        Stem(rand::random()),
+                        500.,
                         None,
                         EnergyDirections::default(),
                     );
@@ -167,7 +167,7 @@ fn main() {
         ))
         .add_systems(Startup, startup)
         .add_systems(FixedUpdate, update)
-        .insert_resource(Time::<Fixed>::from_seconds(0.1))
+        .insert_resource(Time::<Fixed>::from_seconds(0.08))
         .insert_resource(Grid::<WorldCell>::new(0, 0))
         .insert_resource(Settings { w: 256, h: 256 })
         .run();
