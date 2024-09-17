@@ -9,7 +9,7 @@ use cells::{
     WorldCell,
 };
 use grid::{Area, Grid};
-use rand::seq::IteratorRandom;
+use rand::seq::{IteratorRandom, SliceRandom};
 use types::{CellDir::*, Settings};
 use update::update_area;
 
@@ -31,9 +31,9 @@ fn startup(
 
     *world = Grid::<WorldCell>::new(settings.w, settings.h);
 
-    let map = Map::builder(
+    let cell_map = Map::builder(
         uvec2(settings.w, settings.h),
-        asset_server.load("tiles.png"),
+        asset_server.load("cells.png"),
         vec2(16., 16.),
     )
     .build_and_initialize(|m| {
@@ -51,8 +51,26 @@ fn startup(
         }
     });
 
+    let soil_map = Map::builder(
+        uvec2(settings.w, settings.h),
+        asset_server.load("soil.png"),
+        vec2(16., 16.),
+    )
+    .build_and_initialize(|m| {
+        for x in 0..settings.w {
+            for y in 0..settings.h {
+                m.set(x, y, 0);
+            }
+        }
+    });
+
     commands.spawn(MapBundleManaged {
-        material: materials.add(map),
+        material: materials.add(soil_map),
+        ..default()
+    });
+
+    commands.spawn(MapBundleManaged {
+        material: materials.add(cell_map),
         ..default()
     });
 }
@@ -66,7 +84,7 @@ fn update(
     let mut rng = rand::thread_rng();
 
     let mut map = {
-        let Some(map) = map_materials.get_mut(map.single()) else {
+        let Some(map) = map_materials.get_mut(map.iter().nth(1).unwrap()) else {
             warn!("No map material");
             return;
         };
@@ -74,8 +92,11 @@ fn update(
         map.indexer_mut()
     };
 
-    let x_rand = (0..settings.w).choose_multiple(&mut rng, settings.w as usize);
-    let y_rand = (0..settings.h).choose_multiple(&mut rng, settings.h as usize);
+    let mut x_rand: Vec<u32> = (0..settings.w).collect();
+    x_rand.shuffle(&mut rng);
+
+    let mut y_rand: Vec<u32> = (0..settings.h).collect();
+    y_rand.shuffle(&mut rng);
 
     for x in &x_rand {
         for y in &y_rand {

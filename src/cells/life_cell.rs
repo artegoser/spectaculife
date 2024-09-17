@@ -54,7 +54,7 @@ impl AliveCell {
 
     pub const fn texture_id(&self, area: Area<WorldCell>) -> u32 {
         match self.ty {
-            LifeType::Pipe => match merge_energy(&area, self.energy_to) {
+            LifeType::Pipe => match merge_energy(&area, self.energy_to).to_tuple() {
                 (false, false, false, false) => 7,
                 (true, true, false, false) => 8,
                 (false, false, true, true) => 9,
@@ -96,6 +96,26 @@ impl LifeType {
             LifeType::Leaf => 0.5,
             LifeType::Cancer => 1.,
         }
+    }
+
+    pub fn make_newborn_cell(self, parent_dir: CellDir, energy: f32) -> LifeCell {
+        let new_cell_energy_directions = match self {
+            Self::Leaf => EnergyDirections::from_direction(&parent_dir),
+            _ => EnergyDirections::default(),
+        };
+
+        let new_cell_energy = self.birth_capacity() * 0.8 + energy * 0.5;
+
+        LifeCell::Alive(AliveCell::new(
+            self,
+            new_cell_energy,
+            Some(parent_dir),
+            new_cell_energy_directions,
+        ))
+    }
+
+    pub fn birth_capacity(&self) -> f32 {
+        2. * self.consumption()
     }
 }
 
@@ -162,4 +182,72 @@ impl EnergyDirections {
     pub const fn to_tuple(&self) -> (bool, bool, bool, bool) {
         (self.up, self.down, self.left, self.right)
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct BirthDirective {
+    pub up: Option<LifeType>,
+    pub down: Option<LifeType>,
+    pub left: Option<LifeType>,
+    pub right: Option<LifeType>,
+}
+
+impl BirthDirective {
+    pub fn new(
+        up: Option<LifeType>,
+        down: Option<LifeType>,
+        left: Option<LifeType>,
+        right: Option<LifeType>,
+    ) -> Self {
+        Self {
+            up,
+            down,
+            left,
+            right,
+        }
+    }
+
+    pub fn energy_capacity(&self) -> f32 {
+        let mut total = 0.;
+
+        if let Some(life_type) = self.up {
+            total += life_type.birth_capacity()
+        }
+
+        if let Some(life_type) = self.down {
+            total += life_type.birth_capacity()
+        }
+
+        if let Some(life_type) = self.left {
+            total += life_type.birth_capacity()
+        }
+
+        if let Some(life_type) = self.right {
+            total += life_type.birth_capacity()
+        }
+
+        total
+    }
+
+    // pub const fn cell_amount(&self) -> u8 {
+    //     let mut total = 0;
+
+    //     if self.up.is_some() {
+    //         total += 1
+    //     };
+
+    //     if self.down.is_some() {
+    //         total += 1
+    //     };
+
+    //     if self.left.is_some() {
+    //         total += 1
+    //     };
+
+    //     if self.right.is_some() {
+    //         total += 1
+    //     };
+
+    //     total
+    // }
 }

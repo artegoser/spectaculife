@@ -4,7 +4,7 @@ use rand::random;
 use crate::{
     cells::{
         life_cell::{
-            AliveCell, EnergyDirections,
+            AliveCell, BirthDirective, EnergyDirections,
             LifeCell::*,
             LifeType::{self, *},
         },
@@ -32,7 +32,9 @@ pub fn update_area(mut area: Area<WorldCell>) -> Area<WorldCell> {
                         Left => life.energy_to.left = true,
                         Right => life.energy_to.right = true,
                     },
-                    None => return kill(area),
+                    None => {
+                        return kill(area);
+                    }
                 };
             };
         }
@@ -47,11 +49,27 @@ pub fn update_area(mut area: Area<WorldCell>) -> Area<WorldCell> {
         // Process fertile cells
         match life.ty {
             Cancer => {
-                let dir = random::<CellDir>();
+                let up = match area.up.life {
+                    Alive(_) => None,
+                    Dead => Some(Cancer),
+                };
 
-                if matches!(area.cell_from_dir(&dir).life, Dead) {
-                    area = try_birth(area, &dir, Cancer)
-                }
+                let down = match area.down.life {
+                    Alive(_) => None,
+                    Dead => Some(Cancer),
+                };
+
+                let left = match area.left.life {
+                    Alive(_) => None,
+                    Dead => Some(Cancer),
+                };
+
+                let right = match area.right.life {
+                    Alive(_) => None,
+                    Dead => Some(Cancer),
+                };
+
+                area = try_birth(area, BirthDirective::new(up, down, left, right))
             }
 
             _ => {}
@@ -77,30 +95,30 @@ fn transfer_energy(mut area: Area<WorldCell>) -> Area<WorldCell> {
         };
 
         if life.energy_to.up {
-            if let Alive(mut life) = area.up.life {
-                life.energy += flow_each;
-                area.up.life = Alive(life);
+            if let Alive(mut up) = area.up.life {
+                up.energy += flow_each;
+                area.up.life = Alive(up);
             }
         }
 
         if life.energy_to.down {
-            if let Alive(mut life) = area.down.life {
-                life.energy += flow_each;
-                area.down.life = Alive(life);
+            if let Alive(mut down) = area.down.life {
+                down.energy += flow_each;
+                area.down.life = Alive(down);
             }
         }
 
         if life.energy_to.left {
-            if let Alive(mut life) = area.left.life {
-                life.energy += flow_each;
-                area.left.life = Alive(life);
+            if let Alive(mut left) = area.left.life {
+                left.energy += flow_each;
+                area.left.life = Alive(left);
             }
         }
 
         if life.energy_to.right {
-            if let Alive(mut life) = area.right.life {
-                life.energy += flow_each;
-                area.right.life = Alive(life);
+            if let Alive(mut right) = area.right.life {
+                right.energy += flow_each;
+                area.right.life = Alive(right);
             }
         }
 
@@ -111,12 +129,12 @@ fn transfer_energy(mut area: Area<WorldCell>) -> Area<WorldCell> {
 }
 
 /// Try to give birth to cell at given direction
-fn try_birth(mut area: Area<WorldCell>, dir: &CellDir, life_type: LifeType) -> Area<WorldCell> {
+fn try_birth(mut area: Area<WorldCell>, birth_directive: BirthDirective) -> Area<WorldCell> {
     if let Alive(mut life) = area.center.life {
-        let to_produce_energy = 2. * life_type.consumption();
+        let energy_capacity = birth_directive.energy_capacity();
 
-        if life.energy > to_produce_energy {
-            life.energy -= to_produce_energy;
+        if life.energy > energy_capacity {
+            life.energy -= energy_capacity;
 
             // Cell rebirth
             life.ty = match life.ty {
@@ -125,40 +143,25 @@ fn try_birth(mut area: Area<WorldCell>, dir: &CellDir, life_type: LifeType) -> A
                 ty => ty,
             };
 
-            match dir {
-                Up => life.energy_to.up = true,
-                Down => life.energy_to.down = true,
-                Left => life.energy_to.left = true,
-                Right => life.energy_to.right = true,
-            };
+            if let Some(cell_type) = birth_directive.up {
+                life.energy_to.up = true;
+                area.up.life = cell_type.make_newborn_cell(Down, area.up.life.energy());
+            }
 
-            let new_cell = {
-                let new_cell_energy_directions = match life_type {
-                    Leaf => EnergyDirections::from_direction(&dir.opposite()),
-                    _ => EnergyDirections::default(),
-                };
+            if let Some(cell_type) = birth_directive.down {
+                life.energy_to.down = true;
+                area.down.life = cell_type.make_newborn_cell(Up, area.down.life.energy());
+            }
 
-                let new_cell_energy = match dir {
-                    Up => to_produce_energy * 0.8 + area.up.life.energy() * 0.5,
-                    Down => to_produce_energy * 0.8 + area.down.life.energy() * 0.5,
-                    Left => to_produce_energy * 0.8 + area.left.life.energy() * 0.5,
-                    Right => to_produce_energy * 0.8 + area.right.life.energy() * 0.5,
-                };
+            if let Some(cell_type) = birth_directive.left {
+                life.energy_to.left = true;
+                area.left.life = cell_type.make_newborn_cell(Right, area.left.life.energy());
+            }
 
-                Alive(AliveCell::new(
-                    life_type,
-                    new_cell_energy,
-                    Some(dir.opposite()),
-                    new_cell_energy_directions,
-                ))
-            };
-
-            match dir {
-                Up => area.up.life = new_cell,
-                Down => area.down.life = new_cell,
-                Left => area.left.life = new_cell,
-                Right => area.right.life = new_cell,
-            };
+            if let Some(cell_type) = birth_directive.right {
+                life.energy_to.right = true;
+                area.right.life = cell_type.make_newborn_cell(Left, area.right.life.energy());
+            }
         }
 
         area.center.life = Alive(life)

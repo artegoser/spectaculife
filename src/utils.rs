@@ -13,7 +13,7 @@ pub fn get_continual_coord(n: i64, max: u32) -> u32 {
 pub const fn merge_energy(
     area: &Area<WorldCell>,
     mut directions: EnergyDirections,
-) -> (bool, bool, bool, bool) {
+) -> EnergyDirections {
     if let Alive(life) = area.up.life {
         if life.energy_to.down {
             directions.up = true
@@ -38,5 +38,5 @@ pub const fn merge_energy(
         }
     }
 
-    directions.to_tuple()
+    directions
 }
