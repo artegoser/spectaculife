@@ -13,7 +13,7 @@ pub enum CellDir {
 }
 
 impl CellDir {
-    pub fn opposite(&self) -> CellDir {
+    pub const fn opposite(&self) -> CellDir {
         match self {
             CellDir::Up => CellDir::Down,
             CellDir::Down => CellDir::Up,

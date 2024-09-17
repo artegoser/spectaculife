@@ -1,4 +1,6 @@
-use crate::types::CellDir;
+use crate::{grid::Area, types::CellDir, utils::merge_energy};
+
+use super::WorldCell;
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum LifeCell {
@@ -9,9 +11,9 @@ pub enum LifeCell {
 }
 
 impl LifeCell {
-    pub const fn texture_id(&self) -> u32 {
+    pub const fn texture_id(&self, area: Area<WorldCell>) -> u32 {
         match self {
-            Self::Alive(alive_life_cell) => alive_life_cell.texture_id(),
+            Self::Alive(alive_life_cell) => alive_life_cell.texture_id(area),
             Self::Dead => 0,
         }
     }
@@ -50,32 +52,48 @@ impl AliveCell {
         }
     }
 
-    pub const fn texture_id(&self) -> u32 {
+    pub const fn texture_id(&self, area: Area<WorldCell>) -> u32 {
         match self.ty {
-            LifeType::Cancer => 7,
+            LifeType::Pipe => match merge_energy(&area, self.energy_to) {
+                (false, false, false, false) => 7,
+                (true, true, false, false) => 8,
+                (false, false, true, true) => 9,
+                (true, true, true, true) => 10,
+                (false, true, true, false) => 11,
+                (true, false, true, false) => 12,
+                (true, false, false, true) => 13,
+                (false, true, false, true) => 14,
+                (false, true, true, true) => 15,
+                (true, true, true, false) => 16,
+                (true, false, true, true) => 17,
+                (true, true, false, true) => 18,
+                (false, true, false, false) => 19,
+                (false, false, true, false) => 20,
+                (true, false, false, false) => 21,
+                (false, false, false, true) => 22,
+            },
+            LifeType::Leaf => 2,
+            LifeType::Cancer => 6,
         }
     }
 
     pub const fn consumption(&self) -> f32 {
         self.ty.consumption()
     }
-
-    pub fn energy_flow(&self) -> f32 {
-        match self.ty {
-            LifeType::Cancer => self.energy * 0.25,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum LifeType {
-    // Pipe(PipeCell),
+    Pipe,
+    Leaf,
     Cancer,
 }
 
 impl LifeType {
     pub const fn consumption(&self) -> f32 {
         match self {
+            LifeType::Pipe => 0.1,
+            LifeType::Leaf => 0.5,
             LifeType::Cancer => 1.,
         }
     }
@@ -90,6 +108,35 @@ pub struct EnergyDirections {
 }
 
 impl EnergyDirections {
+    pub const fn from_direction(dir: &CellDir) -> Self {
+        match dir {
+            CellDir::Up => EnergyDirections {
+                up: true,
+                down: false,
+                left: false,
+                right: false,
+            },
+            CellDir::Down => EnergyDirections {
+                up: false,
+                down: true,
+                left: false,
+                right: false,
+            },
+            CellDir::Left => EnergyDirections {
+                up: false,
+                down: false,
+                left: true,
+                right: false,
+            },
+            CellDir::Right => EnergyDirections {
+                up: false,
+                down: false,
+                left: false,
+                right: true,
+            },
+        }
+    }
+
     pub const fn branches_amount(&self) -> u8 {
         let mut total = 0;
 
@@ -110,5 +157,9 @@ impl EnergyDirections {
         };
 
         total
+    }
+
+    pub const fn to_tuple(&self) -> (bool, bool, bool, bool) {
+        (self.up, self.down, self.left, self.right)
     }
 }

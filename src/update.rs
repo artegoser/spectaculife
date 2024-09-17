@@ -24,7 +24,7 @@ pub fn update_area(mut area: Area<WorldCell>) -> Area<WorldCell> {
 
         // Reroute energy
         {
-            if life.energy_to.branches_amount() == 0 && !matches!(life.ty, Cancer) {
+            if life.energy_to.branches_amount() == 0 && matches!(life.ty, Pipe) {
                 match life.parent {
                     Some(dir) => match dir {
                         Up => life.energy_to.up = true,
@@ -32,7 +32,7 @@ pub fn update_area(mut area: Area<WorldCell>) -> Area<WorldCell> {
                         Left => life.energy_to.left = true,
                         Right => life.energy_to.right = true,
                     },
-                    None => {}
+                    None => return kill(area),
                 };
             };
         }
@@ -50,9 +50,11 @@ pub fn update_area(mut area: Area<WorldCell>) -> Area<WorldCell> {
                 let dir = random::<CellDir>();
 
                 if matches!(area.cell_from_dir(&dir).life, Dead) {
-                    area = try_born(area, dir, Cancer)
+                    area = try_birth(area, &dir, Cancer)
                 }
             }
+
+            _ => {}
         }
     }
 
@@ -63,7 +65,7 @@ pub fn update_area(mut area: Area<WorldCell>) -> Area<WorldCell> {
 fn transfer_energy(mut area: Area<WorldCell>) -> Area<WorldCell> {
     if let Alive(mut life) = area.center.life {
         let flow_each = {
-            let to_flow = life.energy_flow();
+            let to_flow = (life.energy * 0.5 - 2. * life.consumption()).max(0.);
 
             life.energy -= to_flow;
 
@@ -108,23 +110,22 @@ fn transfer_energy(mut area: Area<WorldCell>) -> Area<WorldCell> {
     area
 }
 
-/// Try to born cell at given direction
-fn try_born(mut area: Area<WorldCell>, direction: CellDir, life_type: LifeType) -> Area<WorldCell> {
+/// Try to give birth to cell at given direction
+fn try_birth(mut area: Area<WorldCell>, dir: &CellDir, life_type: LifeType) -> Area<WorldCell> {
     if let Alive(mut life) = area.center.life {
         let to_produce_energy = 2. * life_type.consumption();
 
         if life.energy > to_produce_energy {
             life.energy -= to_produce_energy;
-            life.ty = match life.ty {
-                Cancer => Cancer,
 
-                ty => {
-                    warn!("The sterile cell gave birth");
-                    ty
-                }
+            // Cell rebirth
+            life.ty = match life.ty {
+                Cancer => Pipe,
+
+                ty => ty,
             };
 
-            match direction {
+            match dir {
                 Up => life.energy_to.up = true,
                 Down => life.energy_to.down = true,
                 Left => life.energy_to.left = true,
@@ -133,10 +134,11 @@ fn try_born(mut area: Area<WorldCell>, direction: CellDir, life_type: LifeType) 
 
             let new_cell = {
                 let new_cell_energy_directions = match life_type {
-                    Cancer => EnergyDirections::default(),
+                    Leaf => EnergyDirections::from_direction(&dir.opposite()),
+                    _ => EnergyDirections::default(),
                 };
 
-                let new_cell_energy = match direction {
+                let new_cell_energy = match dir {
                     Up => to_produce_energy * 0.8 + area.up.life.energy() * 0.5,
                     Down => to_produce_energy * 0.8 + area.down.life.energy() * 0.5,
                     Left => to_produce_energy * 0.8 + area.left.life.energy() * 0.5,
@@ -146,12 +148,12 @@ fn try_born(mut area: Area<WorldCell>, direction: CellDir, life_type: LifeType) 
                 Alive(AliveCell::new(
                     life_type,
                     new_cell_energy,
-                    Some(direction.opposite()),
+                    Some(dir.opposite()),
                     new_cell_energy_directions,
                 ))
             };
 
-            match direction {
+            match dir {
                 Up => area.up.life = new_cell,
                 Down => area.down.life = new_cell,
                 Left => area.left.life = new_cell,

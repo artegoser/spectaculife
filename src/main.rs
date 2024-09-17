@@ -43,12 +43,10 @@ fn startup(
                     let cell = world.get_mut(x as i64, y as i64);
                     let life_cell =
                         AliveCell::new(Cancer, 50000., None, EnergyDirections::default());
-                    m.set(x, y, life_cell.texture_id());
                     cell.life = LifeCell::Alive(life_cell);
-                    continue;
                 }
 
-                m.set(x, y, 15);
+                m.set(x, y, 0);
             }
         }
     });
@@ -91,8 +89,13 @@ fn update(
                     let new_cell = new_area.cell_from_dir(&dir);
                     if prev_cell != new_cell {
                         let coord = new_area.coord_from_dir(&dir, &settings);
-
-                        map.set(coord.x, coord.y, new_cell.life.texture_id());
+                        map.set(
+                            coord.x,
+                            coord.y,
+                            new_cell
+                                .life
+                                .texture_id(Area::new(&mut life, coord.x, coord.y)),
+                        );
                         life.uset(coord.x, coord.y, new_cell);
                     }
                 };
@@ -106,7 +109,7 @@ fn update(
             if prev_area.center != new_area.center {
                 let coord = new_area.get_center_coord(&settings);
 
-                map.set(coord.x, coord.y, new_area.center.life.texture_id());
+                map.set(coord.x, coord.y, new_area.center.life.texture_id(new_area));
                 life.uset(coord.x, coord.y, new_area.center);
             }
         }
