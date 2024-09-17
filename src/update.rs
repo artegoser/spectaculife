@@ -27,10 +27,38 @@ pub fn update_area(mut area: Area<WorldCell>) -> Area<WorldCell> {
             if life.energy_to.branches_amount() == 0 && matches!(life.ty, Pipe) {
                 match life.parent {
                     Some(dir) => match dir {
-                        Up => life.energy_to.up = true,
-                        Down => life.energy_to.down = true,
-                        Left => life.energy_to.left = true,
-                        Right => life.energy_to.right = true,
+                        Up => {
+                            life.energy_to.up = true;
+
+                            if let Alive(mut up) = area.up.life {
+                                up.energy_to.down = false;
+                                area.up.life = Alive(up);
+                            }
+                        }
+                        Down => {
+                            life.energy_to.down = true;
+
+                            if let Alive(mut down) = area.down.life {
+                                down.energy_to.up = false;
+                                area.down.life = Alive(down);
+                            }
+                        }
+                        Left => {
+                            life.energy_to.left = true;
+
+                            if let Alive(mut left) = area.left.life {
+                                left.energy_to.right = false;
+                                area.left.life = Alive(left);
+                            }
+                        }
+                        Right => {
+                            life.energy_to.right = true;
+
+                            if let Alive(mut right) = area.right.life {
+                                right.energy_to.left = false;
+                                area.right.life = Alive(right);
+                            }
+                        }
                     },
                     None => {
                         return kill(area);
