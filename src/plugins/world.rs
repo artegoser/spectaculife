@@ -53,12 +53,13 @@ fn startup(
     let soil_map = Map::builder(
         uvec2(settings.w, settings.h),
         asset_server.load("soil.png"),
-        vec2(16., 16.),
+        vec2(1., 1.),
     )
     .build();
 
     commands.spawn(MapBundleManaged {
         material: materials.add(soil_map),
+        transform: Transform::default().with_scale(vec3(16., 16., 1.)),
         ..default()
     });
 
@@ -127,7 +128,7 @@ fn update(
             let area = Area::new(&mut *life, x, y);
 
             let life_texture = area.center.life.texture_id(&area);
-            let soil_texture = area.center.soil.texture_id();
+            let soil_texture = area.center.soil.organic as u32;
 
             if life_map.at(x, y) != life_texture {
                 life_map.set(x, y, life_texture);
