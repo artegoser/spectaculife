@@ -1,6 +1,7 @@
 use crate::{
     cells::{
         life_cell::{BirthDirective, LifeCell::*, LifeType::*},
+        soil_cell::MAX_ORGANIC_LIFE,
         WorldCell,
     },
     grid::Area,
@@ -19,7 +20,7 @@ pub fn update_area(mut area: Area<WorldCell>) -> Area<WorldCell> {
             return kill(area);
         }
 
-        if area.center.soil.organic > 16 {
+        if area.center.soil.organic > MAX_ORGANIC_LIFE {
             return kill(area);
         }
 
@@ -30,40 +31,25 @@ pub fn update_area(mut area: Area<WorldCell>) -> Area<WorldCell> {
                 Root => {
                     let mut total = 0.0;
 
-                    {
-                        let organic = area.center.soil.organic as f32 * 0.25;
-                        area.center.soil.organic -= organic as u8;
+                    macro_rules! process_organic {
+                        ($dir: ident) => {
+                            if area.$dir.soil.organic == 1 {
+                                area.$dir.soil.organic -= 1;
+                                total += 1.;
+                            } else {
+                                let organic = (area.$dir.soil.organic as f32 * 0.25) as u8;
+                                area.$dir.soil.organic -= organic;
 
-                        total += organic;
+                                total += organic as f32;
+                            };
+                        };
                     }
 
-                    {
-                        let organic = area.up.soil.organic as f32 * 0.25;
-                        area.up.soil.organic -= organic as u8;
-
-                        total += organic;
-                    }
-
-                    {
-                        let organic = area.down.soil.organic as f32 * 0.25;
-                        area.down.soil.organic -= organic as u8;
-
-                        total += organic;
-                    }
-
-                    {
-                        let organic = area.left.soil.organic as f32 * 0.25;
-                        area.left.soil.organic -= organic as u8;
-
-                        total += organic;
-                    }
-
-                    {
-                        let organic = area.right.soil.organic as f32 * 0.25;
-                        area.right.soil.organic -= organic as u8;
-
-                        total += organic;
-                    }
+                    process_organic!(center);
+                    process_organic!(up);
+                    process_organic!(down);
+                    process_organic!(left);
+                    process_organic!(right);
 
                     life.energy += total * 0.4;
                 }
