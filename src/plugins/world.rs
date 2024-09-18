@@ -50,15 +50,22 @@ fn startup(
     )
     .build();
 
-    let soil_map = Map::builder(
+    let organics_map = Map::builder(
         uvec2(settings.w, settings.h),
-        asset_server.load("soil.png"),
+        asset_server.load("organics.png"),
+        vec2(1., 1.),
+    )
+    .build();
+
+    let pollution_map = Map::builder(
+        uvec2(settings.w, settings.h),
+        asset_server.load("pollution.png"),
         vec2(1., 1.),
     )
     .build();
 
     commands.spawn(MapBundleManaged {
-        material: materials.add(soil_map),
+        material: materials.add(organics_map),
         transform: Transform::default().with_scale(vec3(16., 16., 1.)),
         ..default()
     });
@@ -68,27 +75,27 @@ fn startup(
         transform: Transform::default().with_translation(vec3(0., 0., 1.)),
         ..default()
     });
+
+    commands.spawn(MapBundleManaged {
+        material: materials.add(pollution_map),
+        transform: Transform::default()
+            .with_translation(vec3(0., 0., 2.))
+            .with_scale(vec3(16., 16., 1.)),
+        ..default()
+    });
 }
 
 fn initialize(
-    mut map_materials: ResMut<Assets<Map>>,
-    maps: Query<&Handle<Map>>,
     mut world: ResMut<Grid<WorldCell>>,
     settings: Res<Settings>,
     mut state: ResMut<State>,
 ) {
     state.restart = false;
 
-    let mut soil_map = get_map(&maps, &mut *map_materials, 0);
-    let mut life_map = get_map(&maps, &mut *map_materials, 1);
-
     for x in 0..settings.w {
         for y in 0..settings.h {
             let cell = world.get_mut(x as i64, y as i64);
             *cell = WorldCell::default();
-
-            soil_map.set(x, y, 0);
-            life_map.set(x, y, 0);
 
             if x % 2 == 0 && y % 2 == 0 {
                 let life_cell =
@@ -110,32 +117,38 @@ fn restart(state: Res<State>) -> bool {
 fn update(
     mut map_materials: ResMut<Assets<Map>>,
     maps: Query<&Handle<Map>>,
-    mut life: ResMut<Grid<WorldCell>>,
+    mut world: ResMut<Grid<WorldCell>>,
     settings: Res<Settings>,
     state: ResMut<State>,
 ) {
-    let mut soil_map = get_map(&maps, &mut *map_materials, 0);
+    let mut organics_map = get_map(&maps, &mut *map_materials, 0);
     let mut life_map = get_map(&maps, &mut *map_materials, 1);
+    let mut pollution_map = get_map(&maps, &mut *map_materials, 2);
 
     for x in &state.cell_order_x {
         for y in &state.cell_order_y {
-            update_area(Area::new(&mut *life, *x, *y));
+            update_area(Area::new(&mut *world, *x, *y));
         }
     }
 
     for x in 0..settings.w {
         for y in 0..settings.h {
-            let area = Area::new(&mut *life, x, y);
+            let area = Area::new(&mut *world, x, y);
 
+            let organics_texture = area.center.soil.organics as u32;
             let life_texture = area.center.life.texture_id(&area);
-            let soil_texture = area.center.soil.organic as u32;
+            let pollution_texture = area.center.air.pollution as u32;
+
+            if organics_map.at(x, y) != organics_texture {
+                organics_map.set(x, y, organics_texture);
+            }
 
             if life_map.at(x, y) != life_texture {
                 life_map.set(x, y, life_texture);
             }
 
-            if soil_map.at(x, y) != soil_texture {
-                soil_map.set(x, y, soil_texture);
+            if pollution_map.at(x, y) != pollution_texture {
+                pollution_map.set(x, y, pollution_texture);
             }
         }
     }
