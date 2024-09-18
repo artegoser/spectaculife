@@ -62,42 +62,44 @@ impl<T: std::default::Default + std::clone::Clone> Grid<T> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Area<T> {
-    pub up: T,
-    pub down: T,
-    pub left: T,
-    pub right: T,
+#[derive(Debug, PartialEq)]
+pub struct Area<'a, T> {
+    pub up: &'a mut T,
+    pub down: &'a mut T,
+    pub left: &'a mut T,
+    pub right: &'a mut T,
 
-    pub up_left: T,
-    pub up_right: T,
+    pub up_left: &'a mut T,
+    pub up_right: &'a mut T,
 
-    pub down_left: T,
-    pub down_right: T,
+    pub down_left: &'a mut T,
+    pub down_right: &'a mut T,
 
-    pub center: T,
+    pub center: &'a mut T,
 
     pub x: u32,
     pub y: u32,
 }
 
-impl<T: std::default::Default + std::clone::Clone + std::marker::Copy> Area<T> {
-    pub fn new(grid: &mut Grid<T>, x: u32, y: u32) -> Self {
-        Self {
-            up: *grid.get(x as i64, y as i64 - 1),
-            left: *grid.get(x as i64 - 1, y as i64),
-            center: *grid.uget(x, y),
-            right: *grid.get(x as i64 + 1, y as i64),
-            down: *grid.get(x as i64, y as i64 + 1),
+impl<'a, T: std::default::Default + std::clone::Clone + std::marker::Copy> Area<'a, T> {
+    pub fn new(grid: *mut Grid<T>, x: u32, y: u32) -> Self {
+        unsafe {
+            Self {
+                up: (&mut *grid).get_mut(x as i64, y as i64 - 1),
+                left: (&mut *grid).get_mut(x as i64 - 1, y as i64),
+                center: (&mut *grid).uget_mut(x, y),
+                right: (&mut *grid).get_mut(x as i64 + 1, y as i64),
+                down: (&mut *grid).get_mut(x as i64, y as i64 + 1),
 
-            up_left: *grid.get(x as i64 - 1, y as i64 - 1),
-            up_right: *grid.get(x as i64 + 1, y as i64 - 1),
+                up_left: (&mut *grid).get_mut(x as i64 - 1, y as i64 - 1),
+                up_right: (&mut *grid).get_mut(x as i64 + 1, y as i64 - 1),
 
-            down_left: *grid.get(x as i64 - 1, y as i64 + 1),
-            down_right: *grid.get(x as i64 + 1, y as i64 + 1),
+                down_left: (&mut *grid).get_mut(x as i64 - 1, y as i64 + 1),
+                down_right: (&mut *grid).get_mut(x as i64 + 1, y as i64 + 1),
 
-            x,
-            y,
+                x,
+                y,
+            }
         }
     }
 
@@ -129,7 +131,7 @@ impl<T: std::default::Default + std::clone::Clone + std::marker::Copy> Area<T> {
         }
     }
 
-    pub fn get_center_coord(&self) -> Coord {
+    pub fn get_center_coord(&self, _: &Settings) -> Coord {
         Coord {
             x: self.x,
             y: self.y,
@@ -142,15 +144,6 @@ impl<T: std::default::Default + std::clone::Clone + std::marker::Copy> Area<T> {
             CellDir::Down => self.get_down_coord(settings),
             CellDir::Left => self.get_left_coord(settings),
             CellDir::Right => self.get_right_coord(settings),
-        }
-    }
-
-    pub const fn cell_from_dir(&self, dir: &CellDir) -> T {
-        match dir {
-            CellDir::Up => self.up,
-            CellDir::Down => self.down,
-            CellDir::Left => self.left,
-            CellDir::Right => self.right,
         }
     }
 }

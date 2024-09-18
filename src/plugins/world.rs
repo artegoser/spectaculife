@@ -3,17 +3,12 @@ use crate::cells::{
     WorldCell,
 };
 use crate::grid::{Area, Grid};
-use crate::types::{CellDir::*, Settings, State};
+use crate::types::{Settings, State};
 use crate::update::update_area;
 use crate::utils::get_map;
+use bevy::math::{uvec2, vec2, vec3};
 use bevy::prelude::*;
-use bevy::{
-    diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
-    math::{uvec2, vec2, vec3},
-    prelude::*,
-};
 use bevy_fast_tilemap::{FastTileMapPlugin, Map, MapBundleManaged};
-use rand::seq::SliceRandom;
 
 #[derive(Default)]
 pub struct WorldPlugin;
@@ -120,58 +115,30 @@ fn update(
     maps: Query<&Handle<Map>>,
     mut life: ResMut<Grid<WorldCell>>,
     settings: Res<Settings>,
-    mut state: ResMut<State>,
+    state: ResMut<State>,
 ) {
     let mut soil_map = get_map(&maps, &mut *map_materials, 0);
     let mut life_map = get_map(&maps, &mut *map_materials, 1);
 
     for x in &state.cell_order_x {
         for y in &state.cell_order_y {
-            let prev_area = Area::new(&mut life, *x, *y);
-            let new_area = update_area(prev_area.clone());
+            update_area(Area::new(&mut *life, *x, *y));
+        }
+    }
 
-            macro_rules! check_update {
-                ($dir: expr) => {
-                    let dir = $dir;
-                    let prev_cell = prev_area.cell_from_dir(&dir);
-                    let new_cell = new_area.cell_from_dir(&dir);
-                    if prev_cell != new_cell {
-                        let coord = new_area.coord_from_dir(&dir, &settings);
-                        life.uset(coord.x, coord.y, new_cell);
+    for x in 0..settings.w {
+        for y in 0..settings.h {
+            let area = Area::new(&mut *life, x, y);
 
-                        if prev_cell.soil != new_cell.soil {
-                            soil_map.set(coord.x, coord.y, new_cell.soil.texture_id());
-                        }
+            let life_texture = area.center.life.texture_id(&area);
+            let soil_texture = area.center.soil.texture_id();
 
-                        if prev_cell.life != new_cell.life {
-                            life_map.set(
-                                coord.x,
-                                coord.y,
-                                new_cell
-                                    .life
-                                    .texture_id(Area::new(&mut life, coord.x, coord.y)),
-                            );
-                        }
-                    }
-                };
+            if life_map.at(x, y) != life_texture {
+                life_map.set(x, y, life_texture);
             }
 
-            check_update!(Up);
-            check_update!(Down);
-            check_update!(Left);
-            check_update!(Right);
-
-            if prev_area.center != new_area.center {
-                let coord = new_area.get_center_coord();
-                life.uset(coord.x, coord.y, new_area.center);
-
-                if prev_area.center.soil != new_area.center.soil {
-                    soil_map.set(coord.x, coord.y, new_area.center.soil.texture_id());
-                }
-
-                if prev_area.center.life != new_area.center.life {
-                    life_map.set(coord.x, coord.y, new_area.center.life.texture_id(new_area));
-                }
+            if soil_map.at(x, y) != soil_texture {
+                soil_map.set(x, y, soil_texture);
             }
         }
     }

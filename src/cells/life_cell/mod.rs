@@ -15,7 +15,7 @@ pub enum LifeCell {
 }
 
 impl LifeCell {
-    pub const fn texture_id(&self, area: Area<WorldCell>) -> u32 {
+    pub const fn texture_id(&self, area: &Area<WorldCell>) -> u32 {
         match self {
             Self::Alive(alive_life_cell) => alive_life_cell.texture_id(area),
             Self::Dead => 0,
@@ -91,7 +91,7 @@ impl AliveCell {
         }
     }
 
-    pub const fn texture_id(&self, area: Area<WorldCell>) -> u32 {
+    pub const fn texture_id(&self, area: &Area<WorldCell>) -> u32 {
         match self.ty {
             LifeType::Pipe => match merge_energy(&area, self.energy_to).to_tuple() {
                 (false, false, false, false) => 7,

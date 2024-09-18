@@ -7,20 +7,9 @@ mod utils;
 
 use bevy::{
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
-    math::{uvec2, vec2, vec3},
     prelude::*,
 };
-use bevy_fast_tilemap::{FastTileMapPlugin, Map};
-use cells::{
-    life_cell::{AliveCell, EnergyDirections, LifeCell, LifeType::*},
-    WorldCell,
-};
-use grid::{Area, Grid};
 use plugins::{control, world::WorldPlugin};
-use rand::seq::SliceRandom;
-use types::{CellDir::*, Settings, State};
-use update::update_area;
-use utils::get_map;
 
 fn main() {
     App::new()

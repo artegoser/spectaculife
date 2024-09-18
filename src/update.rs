@@ -110,7 +110,7 @@ pub fn update_area(mut area: Area<WorldCell>) -> Area<WorldCell> {
 }
 
 /// Transfer energy
-fn transfer_energy(mut area: Area<WorldCell>) -> Area<WorldCell> {
+fn transfer_energy(area: Area<WorldCell>) -> Area<WorldCell> {
     if let Alive(mut life) = area.center.life {
         if !life.can_transfer() {
             return area;
@@ -179,7 +179,7 @@ fn transfer_energy(mut area: Area<WorldCell>) -> Area<WorldCell> {
 }
 
 /// Try to give birth to cell at given direction
-fn try_birth(mut area: Area<WorldCell>, birth_directive: BirthDirective) -> Area<WorldCell> {
+fn try_birth(area: Area<WorldCell>, birth_directive: BirthDirective) -> Area<WorldCell> {
     if let Alive(mut life) = area.center.life {
         let energy_capacity = birth_directive.energy_capacity();
 
@@ -251,7 +251,7 @@ fn try_birth(mut area: Area<WorldCell>, birth_directive: BirthDirective) -> Area
 }
 
 /// Kill cell and reroute energy paths
-fn kill(mut area: Area<WorldCell>) -> Area<WorldCell> {
+fn kill(area: Area<WorldCell>) -> Area<WorldCell> {
     area.center.soil.organic = area
         .center
         .soil
