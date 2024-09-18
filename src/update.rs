@@ -8,20 +8,20 @@ use crate::{
     types::CellDir::*,
 };
 
-pub fn update_area(mut area: Area<WorldCell>) -> Area<WorldCell> {
+pub fn update_area(mut area: Area<WorldCell>) {
     if let Alive(mut life) = area.center.life {
         life.energy -= life.consumption();
 
         if life.energy < 0. {
-            return kill(area);
+            return kill(&mut area);
         }
 
         if (life.energy_to.branches_amount() == 0) && !life.is_fertile() {
-            return kill(area);
+            return kill(&mut area);
         }
 
         if area.center.soil.organic > MAX_ORGANIC_LIFE {
-            return kill(area);
+            return kill(&mut area);
         }
 
         // Generate energy
@@ -67,17 +67,15 @@ pub fn update_area(mut area: Area<WorldCell>) -> Area<WorldCell> {
 
         // Transfer energy
         if life.energy_to.branches_amount() > 0 {
-            area = transfer_energy(area);
+            transfer_energy(&mut area);
         }
 
         // Process fertile cells
         match life.ty {
-            Stem(genome) => {
-                area = try_birth(
-                    area,
-                    genome.genes[genome.active_gene as usize].to_birth_directive(genome),
-                )
-            }
+            Stem(genome) => try_birth(
+                &mut area,
+                genome.genes[genome.active_gene as usize].to_birth_directive(genome),
+            ),
             Cancer => {
                 let up = match area.up.life {
                     Alive(_) => None,
@@ -99,21 +97,19 @@ pub fn update_area(mut area: Area<WorldCell>) -> Area<WorldCell> {
                     Dead => Some(Cancer),
                 };
 
-                area = try_birth(area, BirthDirective::new(up, down, left, right))
+                try_birth(&mut area, BirthDirective::new(up, down, left, right));
             }
 
             _ => {}
         }
     }
-
-    area
 }
 
 /// Transfer energy
-fn transfer_energy(area: Area<WorldCell>) -> Area<WorldCell> {
+fn transfer_energy(area: &mut Area<WorldCell>) {
     if let Alive(mut life) = area.center.life {
         if !life.can_transfer() {
-            return area;
+            return;
         }
 
         let flow_each = {
@@ -122,7 +118,7 @@ fn transfer_energy(area: Area<WorldCell>) -> Area<WorldCell> {
             life.energy -= to_flow;
 
             if life.energy < life.consumption() {
-                return area;
+                return;
             }
 
             to_flow / (life.energy_to.branches_amount() as f32)
@@ -174,12 +170,10 @@ fn transfer_energy(area: Area<WorldCell>) -> Area<WorldCell> {
 
         area.center.life = Alive(life);
     }
-
-    area
 }
 
 /// Try to give birth to cell at given direction
-fn try_birth(area: Area<WorldCell>, birth_directive: BirthDirective) -> Area<WorldCell> {
+fn try_birth(area: &mut Area<WorldCell>, birth_directive: BirthDirective) {
     if let Alive(mut life) = area.center.life {
         let energy_capacity = birth_directive.energy_capacity();
 
@@ -246,12 +240,10 @@ fn try_birth(area: Area<WorldCell>, birth_directive: BirthDirective) -> Area<Wor
 
         area.center.life = Alive(life)
     }
-
-    area
 }
 
 /// Kill cell and reroute energy paths
-fn kill(area: Area<WorldCell>) -> Area<WorldCell> {
+fn kill(area: &mut Area<WorldCell>) {
     area.center.soil.organic = area
         .center
         .soil
@@ -303,6 +295,4 @@ fn kill(area: Area<WorldCell>) -> Area<WorldCell> {
             area.right.life = Alive(life)
         }
     }
-
-    return area;
 }
