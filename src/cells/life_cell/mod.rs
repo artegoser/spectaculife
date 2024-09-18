@@ -72,22 +72,15 @@ pub struct AliveCell {
     pub energy: f32,
 
     pub energy_to: EnergyDirections,
-    pub parent: Option<CellDir>,
 }
 
 impl AliveCell {
-    pub fn new(
-        ty: LifeType,
-        energy: f32,
-        parent: Option<CellDir>,
-        energy_to: EnergyDirections,
-    ) -> Self {
+    pub fn new(ty: LifeType, energy: f32, energy_to: EnergyDirections) -> Self {
         Self {
             ty,
             energy,
 
             energy_to,
-            parent,
         }
     }
 
@@ -206,7 +199,6 @@ impl LifeType {
         LifeCell::Alive(AliveCell::new(
             self,
             new_cell_energy,
-            Some(parent_dir),
             new_cell_energy_directions,
         ))
     }

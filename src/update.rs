@@ -257,41 +257,21 @@ fn kill(area: &mut Area<WorldCell>) {
     {
         if let Alive(mut life) = area.up.life {
             life.energy_to.down = false;
-
-            if matches!(life.parent, Some(Down)) {
-                life.parent = None;
-            }
-
             area.up.life = Alive(life)
         }
 
         if let Alive(mut life) = area.down.life {
             life.energy_to.up = false;
-
-            if matches!(life.parent, Some(Up)) {
-                life.parent = None;
-            }
-
             area.down.life = Alive(life)
         }
 
         if let Alive(mut life) = area.left.life {
             life.energy_to.right = false;
-
-            if matches!(life.parent, Some(Right)) {
-                life.parent = None;
-            }
-
             area.left.life = Alive(life)
         }
 
         if let Alive(mut life) = area.right.life {
             life.energy_to.left = false;
-
-            if matches!(life.parent, Some(Left)) {
-                life.parent = None;
-            }
-
             area.right.life = Alive(life)
         }
     }

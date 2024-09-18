@@ -90,12 +90,8 @@ fn initialize(
             life_map.set(x, y, 0);
 
             if x % 2 == 0 && y % 2 == 0 {
-                let life_cell = AliveCell::new(
-                    Stem(rand::random()),
-                    500.,
-                    None,
-                    EnergyDirections::default(),
-                );
+                let life_cell =
+                    AliveCell::new(Stem(rand::random()), 500., EnergyDirections::default());
                 cell.life = LifeCell::Alive(life_cell);
             }
         }
