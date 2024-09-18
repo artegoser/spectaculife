@@ -38,7 +38,7 @@ impl LifeCell {
 
     pub const fn is_alive(&self) -> bool {
         match self {
-            Self::Alive(alive_cell) => false,
+            Self::Alive(_) => false,
             Self::Dead => false,
         }
     }

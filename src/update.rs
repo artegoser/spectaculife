@@ -1,17 +1,10 @@
-use bevy::log::warn;
-use rand::random;
-
 use crate::{
     cells::{
-        life_cell::{
-            AliveCell, BirthDirective, EnergyDirections,
-            LifeCell::*,
-            LifeType::{self, *},
-        },
+        life_cell::{BirthDirective, LifeCell::*, LifeType::*},
         WorldCell,
     },
     grid::Area,
-    types::CellDir::{self, *},
+    types::CellDir::*,
 };
 
 pub fn update_area(mut area: Area<WorldCell>) -> Area<WorldCell> {

@@ -34,7 +34,7 @@ impl Distribution<CellDir> for Standard {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Coord {
     pub x: u32,
     pub y: u32,
@@ -44,4 +44,10 @@ pub struct Coord {
 pub struct Settings {
     pub w: u32,
     pub h: u32,
+}
+
+#[derive(Debug, Clone, Copy, Resource, Default)]
+pub struct State {
+    pub cursor_position: Coord,
+    pub paused: bool,
 }
