@@ -33,7 +33,7 @@ pub fn update_area(mut area: Area<WorldCell>) -> Area<WorldCell> {
 
                     macro_rules! process_organic {
                         ($dir: ident) => {
-                            if area.$dir.soil.organic == 1 {
+                            if area.$dir.soil.organic <= 4 && area.$dir.soil.organic > 0 {
                                 area.$dir.soil.organic -= 1;
                                 total += 1.;
                             } else {

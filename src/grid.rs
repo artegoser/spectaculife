@@ -5,7 +5,7 @@ use crate::{
     utils::get_continual_coord,
 };
 
-#[derive(Debug, Clone, Resource)]
+#[derive(Debug, Clone, Resource, Default)]
 pub struct Grid<T> {
     grid: Vec<Vec<T>>,
     width: u32,

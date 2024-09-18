@@ -23,8 +23,8 @@ impl Plugin for WorldPlugin {
             .add_systems(FixedUpdate, update.run_if(not_paused))
             .add_systems(FixedUpdate, initialize.run_if(restart))
             // Resources
-            .insert_resource(Time::<Fixed>::from_seconds(0.08))
-            .insert_resource(Grid::<WorldCell>::new(0, 0))
+            .insert_resource(Time::<Fixed>::from_seconds(0.1))
+            .insert_resource(Grid::<WorldCell>::default())
             .insert_resource(Settings { w: 256, h: 256 })
             .insert_resource(State::default());
     }
