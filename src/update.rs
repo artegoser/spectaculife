@@ -51,6 +51,12 @@ pub fn update_area(mut area: Area<WorldCell>) -> Area<WorldCell> {
                     process_organic!(left);
                     process_organic!(right);
 
+                    process_organic!(up_left);
+                    process_organic!(up_right);
+
+                    process_organic!(down_left);
+                    process_organic!(down_right);
+
                     life.energy += total * 0.4;
                 }
                 _ => {}

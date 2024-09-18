@@ -69,6 +69,12 @@ pub struct Area<T> {
     pub left: T,
     pub right: T,
 
+    pub up_left: T,
+    pub up_right: T,
+
+    pub down_left: T,
+    pub down_right: T,
+
     pub center: T,
 
     pub x: u32,
@@ -83,6 +89,12 @@ impl<T: std::default::Default + std::clone::Clone + std::marker::Copy> Area<T> {
             center: *grid.uget(x, y),
             right: *grid.get(x as i64 + 1, y as i64),
             down: *grid.get(x as i64, y as i64 + 1),
+
+            up_left: *grid.get(x as i64 - 1, y as i64 - 1),
+            up_right: *grid.get(x as i64 + 1, y as i64 - 1),
+
+            down_left: *grid.get(x as i64 - 1, y as i64 + 1),
+            down_right: *grid.get(x as i64 + 1, y as i64 + 1),
 
             x,
             y,
