@@ -26,6 +26,7 @@ impl Plugin for WorldPlugin {
             // Systems
             .add_systems(Startup, startup)
             .add_systems(FixedUpdate, update.run_if(not_paused))
+            .add_systems(FixedUpdate, initialize.run_if(restart))
             // Resources
             .insert_resource(Time::<Fixed>::from_seconds(0.08))
             .insert_resource(Grid::<WorldCell>::new(0, 0))
@@ -40,47 +41,26 @@ fn startup(
     mut materials: ResMut<Assets<Map>>,
     mut world: ResMut<Grid<WorldCell>>,
     settings: Res<Settings>,
+    mut state: ResMut<State>,
 ) {
     commands.spawn(Camera2dBundle::default());
 
     *world = Grid::<WorldCell>::new(settings.w, settings.h);
+    *state = State::from_settings(&settings);
 
     let cell_map = Map::builder(
         uvec2(settings.w, settings.h),
         asset_server.load("life.png"),
         vec2(16., 16.),
     )
-    .build_and_initialize(|m| {
-        for x in 0..settings.w {
-            for y in 0..settings.h {
-                if x % 2 == 0 && y % 2 == 0 {
-                    let cell = world.get_mut(x as i64, y as i64);
-                    let life_cell = AliveCell::new(
-                        Stem(rand::random()),
-                        500.,
-                        None,
-                        EnergyDirections::default(),
-                    );
-                    cell.life = LifeCell::Alive(life_cell);
-                }
-
-                m.set(x, y, 0);
-            }
-        }
-    });
+    .build();
 
     let soil_map = Map::builder(
         uvec2(settings.w, settings.h),
         asset_server.load("soil.png"),
         vec2(16., 16.),
     )
-    .build_and_initialize(|m| {
-        for x in 0..settings.w {
-            for y in 0..settings.h {
-                m.set(x, y, 0);
-            }
-        }
-    });
+    .build();
 
     commands.spawn(MapBundleManaged {
         material: materials.add(soil_map),
@@ -94,8 +74,45 @@ fn startup(
     });
 }
 
+fn initialize(
+    mut map_materials: ResMut<Assets<Map>>,
+    maps: Query<&Handle<Map>>,
+    mut world: ResMut<Grid<WorldCell>>,
+    settings: Res<Settings>,
+    mut state: ResMut<State>,
+) {
+    state.restart = false;
+
+    let mut soil_map = get_map(&maps, &mut *map_materials, 0);
+    let mut life_map = get_map(&maps, &mut *map_materials, 1);
+
+    for x in 0..settings.w {
+        for y in 0..settings.h {
+            let cell = world.get_mut(x as i64, y as i64);
+            *cell = WorldCell::default();
+
+            soil_map.set(x, y, 0);
+            life_map.set(x, y, 0);
+
+            if x % 2 == 0 && y % 2 == 0 {
+                let life_cell = AliveCell::new(
+                    Stem(rand::random()),
+                    500.,
+                    None,
+                    EnergyDirections::default(),
+                );
+                cell.life = LifeCell::Alive(life_cell);
+            }
+        }
+    }
+}
+
 fn not_paused(state: Res<State>) -> bool {
     !state.paused
+}
+
+fn restart(state: Res<State>) -> bool {
+    state.restart
 }
 
 fn update(
@@ -103,20 +120,13 @@ fn update(
     maps: Query<&Handle<Map>>,
     mut life: ResMut<Grid<WorldCell>>,
     settings: Res<Settings>,
+    mut state: ResMut<State>,
 ) {
-    let mut rng = rand::thread_rng();
-
     let mut soil_map = get_map(&maps, &mut *map_materials, 0);
     let mut life_map = get_map(&maps, &mut *map_materials, 1);
 
-    let mut x_rand: Vec<u32> = (0..settings.w).collect();
-    x_rand.shuffle(&mut rng);
-
-    let mut y_rand: Vec<u32> = (0..settings.h).collect();
-    y_rand.shuffle(&mut rng);
-
-    for x in &x_rand {
-        for y in &y_rand {
+    for x in &state.cell_order_x {
+        for y in &state.cell_order_y {
             let prev_area = Area::new(&mut life, *x, *y);
             let new_area = update_area(prev_area.clone());
 

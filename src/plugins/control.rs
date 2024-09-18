@@ -12,8 +12,24 @@ pub struct ControlPlugin;
 
 impl Plugin for ControlPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, mouse_controls_camera)
-            .add_systems(Update, update_cursor_position);
+        app.add_systems(
+            Update,
+            (
+                keyboard_input,
+                mouse_controls_camera,
+                update_cursor_position,
+            ),
+        );
+    }
+}
+
+fn keyboard_input(keys: Res<ButtonInput<KeyCode>>, mut state: ResMut<State>) {
+    if keys.just_pressed(KeyCode::Space) {
+        state.paused = !state.paused;
+    }
+
+    if keys.just_pressed(KeyCode::KeyR) {
+        state.restart = true;
     }
 }
 

@@ -29,9 +29,16 @@ impl LifeCell {
         }
     }
 
-    pub const fn is_pipe(&self) -> bool {
+    pub const fn can_transfer(&self) -> bool {
         match self {
-            Self::Alive(alive_cell) => alive_cell.is_pipe(),
+            Self::Alive(alive_cell) => alive_cell.can_transfer(),
+            Self::Dead => false,
+        }
+    }
+
+    pub const fn is_pipe_recipient(&self) -> bool {
+        match self {
+            Self::Alive(alive_cell) => alive_cell.is_pipe_recipient(),
             Self::Dead => false,
         }
     }
@@ -111,8 +118,12 @@ impl AliveCell {
         }
     }
 
-    pub const fn is_pipe(&self) -> bool {
-        self.ty.is_pipe()
+    pub const fn can_transfer(&self) -> bool {
+        self.ty.can_transfer()
+    }
+
+    pub const fn is_pipe_recipient(&self) -> bool {
+        self.ty.is_pipe_recipient()
     }
 
     pub const fn is_fertile(&self) -> bool {
@@ -139,9 +150,16 @@ pub enum LifeType {
 }
 
 impl LifeType {
-    pub const fn is_pipe(&self) -> bool {
+    pub const fn can_transfer(&self) -> bool {
         match self {
-            LifeType::Pipe | LifeType::Cancer => true,
+            LifeType::Pipe | LifeType::Cancer | LifeType::Leaf | LifeType::Root => true,
+            _ => false,
+        }
+    }
+
+    pub const fn is_pipe_recipient(&self) -> bool {
+        match self {
+            LifeType::Pipe | LifeType::Cancer | LifeType::Stem(_) => true,
             _ => false,
         }
     }
@@ -168,7 +186,7 @@ impl LifeType {
             LifeType::Pipe => 1,
             LifeType::Leaf => 2,
             LifeType::Cancer => 3,
-            LifeType::Stem(_) => 5,
+            LifeType::Stem(_) => 1,
             LifeType::Root => 2,
         }
     }

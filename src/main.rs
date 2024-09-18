@@ -37,6 +37,5 @@ fn main() {
             control::ControlPlugin::default(),
             WorldPlugin::default(),
         ))
-        // .insert_resource(Msaa::default())
         .run();
 }

@@ -120,6 +120,10 @@ pub fn update_area(mut area: Area<WorldCell>) -> Area<WorldCell> {
 /// Transfer energy
 fn transfer_energy(mut area: Area<WorldCell>) -> Area<WorldCell> {
     if let Alive(mut life) = area.center.life {
+        if !life.can_transfer() {
+            return area;
+        }
+
         let flow_each = {
             let to_flow = (life.energy * 0.5 - 2. * life.consumption()).max(0.);
 
@@ -134,7 +138,7 @@ fn transfer_energy(mut area: Area<WorldCell>) -> Area<WorldCell> {
 
         if life.energy_to.up {
             if let Alive(mut up) = area.up.life {
-                if up.is_pipe() || up.is_fertile() {
+                if up.is_pipe_recipient() {
                     up.energy += flow_each;
                     area.up.life = Alive(up);
                 } else {
@@ -145,7 +149,7 @@ fn transfer_energy(mut area: Area<WorldCell>) -> Area<WorldCell> {
 
         if life.energy_to.down {
             if let Alive(mut down) = area.down.life {
-                if down.is_pipe() || down.is_fertile() {
+                if down.is_pipe_recipient() {
                     down.energy += flow_each;
                     area.down.life = Alive(down);
                 } else {
@@ -156,7 +160,7 @@ fn transfer_energy(mut area: Area<WorldCell>) -> Area<WorldCell> {
 
         if life.energy_to.left {
             if let Alive(mut left) = area.left.life {
-                if left.is_pipe() || left.is_fertile() {
+                if left.is_pipe_recipient() {
                     left.energy += flow_each;
                     area.left.life = Alive(left);
                 } else {
@@ -167,7 +171,7 @@ fn transfer_energy(mut area: Area<WorldCell>) -> Area<WorldCell> {
 
         if life.energy_to.right {
             if let Alive(mut right) = area.right.life {
-                if right.is_pipe() || right.is_fertile() {
+                if right.is_pipe_recipient() {
                     right.energy += flow_each;
                     area.right.life = Alive(right);
                 } else {
