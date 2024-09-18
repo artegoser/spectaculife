@@ -170,7 +170,7 @@ impl LifeType {
             LifeType::Leaf => 0.5,
             LifeType::Cancer => 1.,
             LifeType::Stem(_) => 0.1,
-            LifeType::Root => 0.3,
+            LifeType::Root => 0.7,
         }
     }
 

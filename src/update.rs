@@ -29,7 +29,7 @@ pub fn update_area(mut area: Area<WorldCell>) {
         // Generate energy
         {
             match life.ty {
-                Leaf => life.energy += 1.8 / (area.center.air.pollution as f32 / 16.).max(1.),
+                Leaf => life.energy += 1.8 / (area.center.air.pollution as f32 / 4.).max(1.),
                 Root => {
                     let mut total = 0.0;
 
