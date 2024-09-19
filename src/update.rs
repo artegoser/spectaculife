@@ -1,4 +1,5 @@
 use crate::{
+    all_directions, cell_directions, cell_op_directions,
     cells::{
         life_cell::{BirthDirective, LifeCell::*, LifeType::*},
         soil_cell::{MAX_ENERGY_LIFE, MAX_ORGANIC_LIFE},
@@ -81,17 +82,7 @@ pub fn update_area(mut area: Area<WorldCell>) {
                         };
                     }
 
-                    process_organic!(center);
-                    process_organic!(up);
-                    process_organic!(down);
-                    process_organic!(left);
-                    process_organic!(right);
-
-                    process_organic!(up_left);
-                    process_organic!(up_right);
-
-                    process_organic!(down_left);
-                    process_organic!(down_right);
+                    all_directions!(process_organic);
 
                     life.energy += total * 0.4;
                     area.center.soil.energy += total * 0.5;
@@ -108,23 +99,14 @@ pub fn update_area(mut area: Area<WorldCell>) {
                         };
                     }
 
-                    process_energy!(center);
-                    process_energy!(up);
-                    process_energy!(down);
-                    process_energy!(left);
-                    process_energy!(right);
+                    all_directions!(process_energy);
 
-                    process_energy!(up_left);
-                    process_energy!(up_right);
-
-                    process_energy!(down_left);
-                    process_energy!(down_right);
                     life.energy += total * 0.6;
                     area.center.soil.organics = area
                         .center
                         .soil
                         .organics
-                        .saturating_add((total * 0.3) as u8)
+                        .saturating_add((total * 0.2) as u8)
                 }
                 _ => {}
             }
@@ -142,13 +124,11 @@ pub fn update_area(mut area: Area<WorldCell>) {
             Stem(genome) => try_birth(
                 &mut area,
                 genome.genes[genome.active_gene as usize].to_birth_directive(genome),
-                false,
             ),
             Cancer => {
                 try_birth(
                     &mut area,
                     BirthDirective::new(Some(Cancer), Some(Cancer), Some(Cancer), Some(Cancer)),
-                    true,
                 );
             }
 
@@ -199,19 +179,17 @@ fn process_soil(area: &mut Area<WorldCell>) {
     total += area.down.soil.energy;
     total += area.down_right.soil.energy;
 
-    let foreach = total / 9.;
+    let foreach = total / 9.0025;
 
-    if foreach <= MAX_ENERGY_LIFE {
-        area.up_left.soil.energy = foreach;
-        area.up.soil.energy = foreach;
-        area.up_right.soil.energy = foreach;
-        area.left.soil.energy = foreach;
-        area.center.soil.energy = foreach;
-        area.right.soil.energy = foreach;
-        area.down_left.soil.energy = foreach;
-        area.down.soil.energy = foreach;
-        area.down_right.soil.energy = foreach;
-    }
+    area.up_left.soil.energy = foreach;
+    area.up.soil.energy = foreach;
+    area.up_right.soil.energy = foreach;
+    area.left.soil.energy = foreach;
+    area.center.soil.energy = foreach;
+    area.right.soil.energy = foreach;
+    area.down_left.soil.energy = foreach;
+    area.down.soil.energy = foreach;
+    area.down_right.soil.energy = foreach;
 }
 
 /// Transfer energy
@@ -233,95 +211,68 @@ fn transfer_energy(area: &mut Area<WorldCell>) {
             to_flow / (life.energy_to.branches_amount() as f32)
         };
 
-        if life.energy_to.up {
-            if let Alive(mut up) = area.up.life {
-                if up.is_pipe_recipient() {
-                    up.energy += flow_each;
-                    area.up.life = Alive(up);
-                } else {
-                    life.energy_to.up = false;
+        macro_rules! transfer {
+            ($dir: ident) => {
+                if life.energy_to.$dir {
+                    if let Alive(mut $dir) = area.$dir.life {
+                        if $dir.is_pipe_recipient() {
+                            $dir.energy += flow_each;
+                            area.$dir.life = Alive($dir);
+                        } else {
+                            life.energy_to.$dir = false;
+                        }
+                    } else {
+                        life.energy_to.$dir = false;
+                    }
                 }
-            } else {
-                life.energy_to.up = false;
-            }
+            };
         }
 
-        if life.energy_to.down {
-            if let Alive(mut down) = area.down.life {
-                if down.is_pipe_recipient() {
-                    down.energy += flow_each;
-                    area.down.life = Alive(down);
-                } else {
-                    life.energy_to.down = false;
-                }
-            } else {
-                life.energy_to.down = false;
-            }
-        }
-
-        if life.energy_to.left {
-            if let Alive(mut left) = area.left.life {
-                if left.is_pipe_recipient() {
-                    left.energy += flow_each;
-                    area.left.life = Alive(left);
-                } else {
-                    life.energy_to.left = false;
-                }
-            } else {
-                life.energy_to.left = false;
-            }
-        }
-
-        if life.energy_to.right {
-            if let Alive(mut right) = area.right.life {
-                if right.is_pipe_recipient() {
-                    right.energy += flow_each;
-                    area.right.life = Alive(right);
-                } else {
-                    life.energy_to.right = false;
-                }
-            } else {
-                life.energy_to.right = false;
-            }
-        }
+        cell_directions!(transfer);
 
         area.center.life = Alive(life);
     }
 }
 
 /// Try to give birth to cell at given direction
-fn try_birth(area: &mut Area<WorldCell>, birth_directive: BirthDirective, force: bool) {
+fn try_birth(area: &mut Area<WorldCell>, birth_directive: BirthDirective) {
     if let Alive(mut life) = area.center.life {
         let energy_capacity = birth_directive.energy_capacity();
 
         if life.energy > energy_capacity {
             life.energy -= energy_capacity;
 
-            // Cell rebirth
-            life.ty = match life.ty {
-                Stem(_) => Pipe,
-
-                ty => ty,
-            };
+            let mut born_once = false;
 
             macro_rules! try_newborn {
-                ($dir: ident) => {
+                ($dir: ident, $op_dir: ident) => {
                     if let Some(cell_type) = birth_directive.$dir {
-                        // if Dead == area.$dir.life || force {
-                        if cell_type.is_fertile() {
-                            life.energy_to.$dir = true;
-                        }
+                        if area.$dir.life == Dead {
+                            if cell_type.is_fertile() {
+                                life.energy_to.$dir = true;
+                            }
 
-                        area.$dir.life = cell_type.make_newborn_cell(Down);
-                        // }
+                            area.$dir.life = cell_type.make_newborn_cell($op_dir);
+
+                            born_once = true;
+                        }
                     }
                 };
             }
 
-            try_newborn!(up);
-            try_newborn!(down);
-            try_newborn!(left);
-            try_newborn!(right);
+            try_newborn!(up, Down);
+            try_newborn!(down, Up);
+            try_newborn!(left, Right);
+            try_newborn!(right, Left);
+
+            // Cell rebirth
+            if born_once {
+                life.ty = match life.ty {
+                    Stem(_) => Pipe,
+
+                    ty => ty,
+                };
+            }
         }
 
         area.center.life = Alive(life)
@@ -348,44 +299,20 @@ fn kill(area: &mut Area<WorldCell>) {
 
     // Reroute energy of neighbors
     {
-        if let Alive(mut up) = area.up.life {
-            up.energy_to.down = false;
+        macro_rules! reroute {
+            ($dir:ident,$op_dir:ident) => {
+                if let Alive(mut $dir) = area.$dir.life {
+                    $dir.energy_to.$op_dir = false;
 
-            if let Some(Down) = up.parent_dir {
-                up.parent_dir = None;
-            }
+                    if let Some(Down) = $dir.parent_dir {
+                        $dir.parent_dir = None;
+                    }
 
-            area.up.life = Alive(up);
+                    area.$dir.life = Alive($dir);
+                }
+            };
         }
 
-        if let Alive(mut down) = area.down.life {
-            down.energy_to.up = false;
-
-            if let Some(Up) = down.parent_dir {
-                down.parent_dir = None;
-            }
-
-            area.down.life = Alive(down)
-        }
-
-        if let Alive(mut left) = area.left.life {
-            left.energy_to.right = false;
-
-            if let Some(Right) = left.parent_dir {
-                left.parent_dir = None;
-            }
-
-            area.left.life = Alive(left)
-        }
-
-        if let Alive(mut right) = area.right.life {
-            right.energy_to.left = false;
-
-            if let Some(Left) = right.parent_dir {
-                right.parent_dir = None;
-            }
-
-            area.right.life = Alive(right)
-        }
+        cell_op_directions!(reroute);
     }
 }

@@ -61,3 +61,40 @@ pub const fn merge_energy(
 
     directions
 }
+
+#[macro_export]
+macro_rules! all_directions {
+    ($macro: ident) => {
+        $macro!(center);
+        $macro!(up);
+        $macro!(down);
+        $macro!(left);
+        $macro!(right);
+
+        $macro!(up_left);
+        $macro!(up_right);
+
+        $macro!(down_left);
+        $macro!(down_right);
+    };
+}
+
+#[macro_export]
+macro_rules! cell_directions {
+    ($macro: ident) => {
+        $macro!(up);
+        $macro!(down);
+        $macro!(left);
+        $macro!(right);
+    };
+}
+
+#[macro_export]
+macro_rules! cell_op_directions {
+    ($macro: ident) => {
+        $macro!(up, down);
+        $macro!(down, up);
+        $macro!(left, right);
+        $macro!(right, left);
+    };
+}
