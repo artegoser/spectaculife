@@ -118,25 +118,21 @@ fn update_cursor_position(
     materials: ResMut<Assets<Map>>,
 ) {
     for event in cursor_moved_events.read() {
-        for map_handle in maps.iter() {
-            let map = materials.get(map_handle).unwrap();
+        let map = materials.get(maps.iter().nth(1).unwrap()).unwrap();
 
-            for (global, camera) in camera_query.iter_mut() {
-                // Translate viewport coordinates to world coordinates
-                if let Some(world) = camera
-                    .viewport_to_world(global, event.position)
-                    .map(|ray| ray.origin.truncate())
-                {
-                    // The map can convert between world coordinates and map coordinates for us
-                    let coord = map.world_to_map(world);
+        for (global, camera) in camera_query.iter_mut() {
+            if let Some(world) = camera
+                .viewport_to_world(global, event.position)
+                .map(|ray| ray.origin.truncate())
+            {
+                let coord = map.world_to_map(world);
 
-                    let coord = coord
-                        .as_uvec2()
-                        .clamp(uvec2(0, 0), map.map_size() - uvec2(1, 1));
+                let coord = coord
+                    .as_uvec2()
+                    .clamp(uvec2(0, 0), map.map_size() - uvec2(1, 1));
 
-                    state.cursor_position.x = coord.x;
-                    state.cursor_position.y = coord.y;
-                }
+                state.cursor_position.x = coord.x;
+                state.cursor_position.y = coord.y;
             }
         }
     }

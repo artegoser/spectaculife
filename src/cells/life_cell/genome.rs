@@ -82,10 +82,10 @@ impl GeneAction {
 impl Distribution<GeneAction> for Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> GeneAction {
         match rng.gen_range(0..=100) {
-            0..=15 => GeneAction::MultiplySelf(rng.gen_range(0..MAX_GENES)),
-            16..=25 => GeneAction::MakeLeaf,
-            36..=45 => GeneAction::MakeRoot,
-            46..=50 => GeneAction::MakeReactor,
+            0..=30 => GeneAction::MultiplySelf(rng.gen_range(0..MAX_GENES)),
+            31..=50 => GeneAction::MakeLeaf,
+            51..=70 => GeneAction::MakeRoot,
+            71..=80 => GeneAction::MakeReactor,
             _ => GeneAction::Nothing,
         }
     }

@@ -43,6 +43,13 @@ impl LifeCell {
         }
     }
 
+    pub const fn is_pipe(&self) -> bool {
+        match self {
+            Self::Alive(alive_cell) => alive_cell.is_pipe(),
+            Self::Dead => false,
+        }
+    }
+
     pub const fn is_energy_generator(&self) -> bool {
         match self {
             Self::Alive(alive_cell) => alive_cell.is_energy_generator(),
@@ -79,15 +86,24 @@ pub struct AliveCell {
     pub energy: f32,
 
     pub energy_to: EnergyDirections,
+
+    pub parent_dir: Option<CellDir>,
 }
 
 impl AliveCell {
-    pub fn new(ty: LifeType, energy: f32, energy_to: EnergyDirections) -> Self {
+    pub fn new(
+        ty: LifeType,
+        energy: f32,
+        energy_to: EnergyDirections,
+        parent_dir: Option<CellDir>,
+    ) -> Self {
         Self {
             ty,
             energy,
 
             energy_to,
+
+            parent_dir,
         }
     }
 
@@ -127,6 +143,10 @@ impl AliveCell {
         self.ty.is_pipe_recipient()
     }
 
+    pub const fn is_pipe(&self) -> bool {
+        self.ty.is_pipe()
+    }
+
     pub const fn is_energy_generator(&self) -> bool {
         self.ty.is_energy_generator()
     }
@@ -157,19 +177,19 @@ pub enum LifeType {
 
 impl LifeType {
     pub const fn can_transfer(&self) -> bool {
-        if self.is_energy_generator() {
-            return true;
-        }
-
-        match self {
-            LifeType::Pipe | LifeType::Cancer => true,
-            _ => false,
-        }
+        self.is_energy_generator() || self.is_pipe()
     }
 
     pub const fn is_energy_generator(&self) -> bool {
         match self {
             LifeType::Leaf | LifeType::Root | LifeType::Reactor => true,
+            _ => false,
+        }
+    }
+
+    pub const fn is_pipe(&self) -> bool {
+        match self {
+            LifeType::Pipe | LifeType::Cancer => true,
             _ => false,
         }
     }
@@ -194,8 +214,8 @@ impl LifeType {
             LifeType::Leaf => 0.5,
             LifeType::Cancer => 1.,
             LifeType::Stem(_) => 0.1,
-            LifeType::Root => 0.7,
-            LifeType::Reactor => 0.3,
+            LifeType::Root => 0.5,
+            LifeType::Reactor => 0.7,
         }
     }
 
@@ -214,19 +234,20 @@ impl LifeType {
         2. * self.consumption()
     }
 
-    pub fn make_newborn_cell(self, parent_dir: CellDir, energy: f32) -> LifeCell {
+    pub fn make_newborn_cell(self, parent_dir: CellDir) -> LifeCell {
         let new_cell_energy_directions = if self.is_energy_generator() {
             EnergyDirections::from_direction(&parent_dir)
         } else {
             EnergyDirections::default()
         };
 
-        let new_cell_energy = self.birth_capacity() * 0.8 + energy * 0.5;
+        let new_cell_energy = self.birth_capacity() * 0.8;
 
         LifeCell::Alive(AliveCell::new(
             self,
             new_cell_energy,
             new_cell_energy_directions,
+            Some(parent_dir),
         ))
     }
 }

@@ -1,5 +1,6 @@
 use crate::cells::{
     life_cell::{AliveCell, EnergyDirections, LifeCell, LifeType::*},
+    soil_cell::MAX_ENERGY_LIFE,
     WorldCell,
 };
 use crate::grid::{Area, Grid};
@@ -112,7 +113,7 @@ fn initialize(
 
             if x % 2 == 0 && y % 2 == 0 {
                 let life_cell =
-                    AliveCell::new(Stem(rand::random()), 8., EnergyDirections::default());
+                    AliveCell::new(Stem(rand::random()), 8., EnergyDirections::default(), None);
                 cell.life = LifeCell::Alive(life_cell);
             }
         }
@@ -154,7 +155,8 @@ fn update(
             let organics_texture = area.center.soil.organics as u32;
             let life_texture = area.center.life.texture_id(&area);
             let pollution_texture = area.center.air.pollution as u32;
-            let soil_energy_texture = ((area.center.soil.energy * 20.) as u32).min(255);
+            let soil_energy_texture =
+                ((area.center.soil.energy * 255. / MAX_ENERGY_LIFE) as u32).min(255);
 
             if organics_map.at(x, y) != organics_texture && state.organic_visible {
                 organics_map.set(x, y, organics_texture);
