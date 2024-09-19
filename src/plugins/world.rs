@@ -21,7 +21,7 @@ impl Plugin for WorldPlugin {
             // Systems
             .add_systems(Startup, startup)
             .add_systems(FixedUpdate, update.run_if(not_paused))
-            .add_systems(FixedUpdate, initialize.run_if(restart))
+            .add_systems(FixedUpdate, initialize.run_if(not_initialized))
             // Resources
             .insert_resource(Time::<Fixed>::from_seconds(0.1))
             .insert_resource(Grid::<WorldCell>::default())
@@ -64,6 +64,13 @@ fn startup(
     )
     .build();
 
+    let soil_energy_map = Map::builder(
+        uvec2(settings.w, settings.h),
+        asset_server.load("soil_energy.png"),
+        vec2(1., 1.),
+    )
+    .build();
+
     commands.spawn(MapBundleManaged {
         material: materials.add(organics_map),
         transform: Transform::default().with_scale(vec3(16., 16., 1.)),
@@ -72,14 +79,22 @@ fn startup(
 
     commands.spawn(MapBundleManaged {
         material: materials.add(cell_map),
-        transform: Transform::default().with_translation(vec3(0., 0., 1.)),
+        transform: Transform::default().with_translation(vec3(0., 0., 2.)),
         ..default()
     });
 
     commands.spawn(MapBundleManaged {
         material: materials.add(pollution_map),
         transform: Transform::default()
-            .with_translation(vec3(0., 0., 2.))
+            .with_translation(vec3(0., 0., 3.))
+            .with_scale(vec3(16., 16., 1.)),
+        ..default()
+    });
+
+    commands.spawn(MapBundleManaged {
+        material: materials.add(soil_energy_map),
+        transform: Transform::default()
+            .with_translation(vec3(0., 0., 1.))
             .with_scale(vec3(16., 16., 1.)),
         ..default()
     });
@@ -90,8 +105,6 @@ fn initialize(
     settings: Res<Settings>,
     mut state: ResMut<State>,
 ) {
-    state.restart = false;
-
     for x in 0..settings.w {
         for y in 0..settings.h {
             let cell = world.get_mut(x as i64, y as i64);
@@ -99,19 +112,21 @@ fn initialize(
 
             if x % 2 == 0 && y % 2 == 0 {
                 let life_cell =
-                    AliveCell::new(Stem(rand::random()), 500., EnergyDirections::default());
+                    AliveCell::new(Stem(rand::random()), 8., EnergyDirections::default());
                 cell.life = LifeCell::Alive(life_cell);
             }
         }
     }
+
+    state.initialized = true;
 }
 
 fn not_paused(state: Res<State>) -> bool {
     !state.paused
 }
 
-fn restart(state: Res<State>) -> bool {
-    state.restart
+fn not_initialized(state: Res<State>) -> bool {
+    !state.initialized
 }
 
 fn update(
@@ -124,6 +139,7 @@ fn update(
     let mut organics_map = get_map(&maps, &mut *map_materials, 0);
     let mut life_map = get_map(&maps, &mut *map_materials, 1);
     let mut pollution_map = get_map(&maps, &mut *map_materials, 2);
+    let mut soil_energy_map = get_map(&maps, &mut *map_materials, 3);
 
     for x in &state.cell_order_x {
         for y in &state.cell_order_y {
@@ -138,17 +154,22 @@ fn update(
             let organics_texture = area.center.soil.organics as u32;
             let life_texture = area.center.life.texture_id(&area);
             let pollution_texture = area.center.air.pollution as u32;
+            let soil_energy_texture = ((area.center.soil.energy * 20.) as u32).min(255);
 
-            if organics_map.at(x, y) != organics_texture {
+            if organics_map.at(x, y) != organics_texture && state.organic_visible {
                 organics_map.set(x, y, organics_texture);
             }
 
-            if life_map.at(x, y) != life_texture {
+            if life_map.at(x, y) != life_texture && state.life_visible {
                 life_map.set(x, y, life_texture);
             }
 
-            if pollution_map.at(x, y) != pollution_texture {
+            if pollution_map.at(x, y) != pollution_texture && state.pollution_visible {
                 pollution_map.set(x, y, pollution_texture);
+            }
+
+            if soil_energy_map.at(x, y) != soil_energy_texture {
+                soil_energy_map.set(x, y, soil_energy_texture);
             }
         }
     }

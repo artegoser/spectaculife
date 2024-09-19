@@ -51,9 +51,14 @@ pub struct Settings {
 pub struct State {
     pub cursor_position: Coord,
     pub paused: bool,
-    pub restart: bool,
+    pub initialized: bool,
+
     pub cell_order_x: Vec<u32>,
     pub cell_order_y: Vec<u32>,
+
+    pub organic_visible: bool,
+    pub life_visible: bool,
+    pub pollution_visible: bool,
 }
 
 impl State {
@@ -67,12 +72,16 @@ impl State {
         cell_order_y.shuffle(&mut rng);
 
         State {
-            restart: true,
+            initialized: false,
             paused: false,
             cursor_position: Coord::default(),
 
             cell_order_x,
             cell_order_y,
+
+            organic_visible: true,
+            life_visible: true,
+            pollution_visible: true,
         }
     }
 }
@@ -80,12 +89,16 @@ impl State {
 impl Default for State {
     fn default() -> Self {
         State {
-            restart: true,
+            initialized: false,
             paused: false,
             cursor_position: Coord::default(),
 
             cell_order_x: vec![],
             cell_order_y: vec![],
+
+            organic_visible: true,
+            life_visible: true,
+            pollution_visible: true,
         }
     }
 }

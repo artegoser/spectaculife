@@ -58,6 +58,7 @@ impl Distribution<Gene> for Standard {
 pub enum GeneAction {
     MakeLeaf,
     MakeRoot,
+    MakeReactor,
     MultiplySelf(u8),
     Nothing,
 }
@@ -73,6 +74,7 @@ impl GeneAction {
                 Some(LifeType::Stem(genome))
             }
             GeneAction::Nothing => None,
+            GeneAction::MakeReactor => Some(LifeType::Reactor),
         }
     }
 }
@@ -81,8 +83,9 @@ impl Distribution<GeneAction> for Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> GeneAction {
         match rng.gen_range(0..=100) {
             0..=15 => GeneAction::MultiplySelf(rng.gen_range(0..MAX_GENES)),
-            16..=30 => GeneAction::MakeLeaf,
-            31..=40 => GeneAction::MakeRoot,
+            16..=25 => GeneAction::MakeLeaf,
+            36..=45 => GeneAction::MakeRoot,
+            46..=50 => GeneAction::MakeReactor,
             _ => GeneAction::Nothing,
         }
     }

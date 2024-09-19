@@ -1,15 +1,16 @@
 use crate::{
     cells::{
         life_cell::{BirthDirective, LifeCell::*, LifeType::*},
-        soil_cell::MAX_ORGANIC_LIFE,
+        soil_cell::{MAX_ENERGY_LIFE, MAX_ORGANIC_LIFE},
         WorldCell,
     },
     grid::Area,
-    types::CellDir::{self, *},
+    types::CellDir::*,
 };
 
 pub fn update_area(mut area: Area<WorldCell>) {
     process_air(&mut area);
+    process_soil(&mut area);
 
     if let Alive(mut life) = area.center.life {
         life.energy -= life.consumption();
@@ -22,7 +23,8 @@ pub fn update_area(mut area: Area<WorldCell>) {
             return kill(&mut area);
         }
 
-        if area.center.soil.organics > MAX_ORGANIC_LIFE {
+        if area.center.soil.organics > MAX_ORGANIC_LIFE || area.center.soil.energy > MAX_ENERGY_LIFE
+        {
             return kill(&mut area);
         }
 
@@ -63,6 +65,33 @@ pub fn update_area(mut area: Area<WorldCell>) {
                     process_organic!(down_right);
 
                     life.energy += total * 0.4;
+                    area.center.soil.energy += total * 0.5;
+                }
+                Reactor => {
+                    let mut total = 0.0;
+
+                    macro_rules! process_energy {
+                        ($dir: ident) => {
+                            let organic = area.$dir.soil.energy * 0.16;
+                            area.$dir.soil.energy -= organic;
+
+                            total += organic as f32;
+                        };
+                    }
+
+                    process_energy!(center);
+                    process_energy!(up);
+                    process_energy!(down);
+                    process_energy!(left);
+                    process_energy!(right);
+
+                    process_energy!(up_left);
+                    process_energy!(up_right);
+
+                    process_energy!(down_left);
+                    process_energy!(down_right);
+
+                    life.energy += total * 0.8;
                 }
                 _ => {}
             }
@@ -136,6 +165,34 @@ fn process_air(area: &mut Area<WorldCell>) {
         area.down_left.air.pollution = foreach;
         area.down.air.pollution = foreach + 1;
         area.down_right.air.pollution = foreach + 1;
+    }
+}
+
+fn process_soil(area: &mut Area<WorldCell>) {
+    let mut total: f32 = 0.;
+
+    total += area.up_left.soil.energy;
+    total += area.up.soil.energy;
+    total += area.up_right.soil.energy;
+    total += area.left.soil.energy;
+    total += area.center.soil.energy;
+    total += area.right.soil.energy;
+    total += area.down_left.soil.energy;
+    total += area.down.soil.energy;
+    total += area.down_right.soil.energy;
+
+    let foreach = total / 9.;
+
+    if foreach <= MAX_ENERGY_LIFE {
+        area.up_left.soil.energy = foreach;
+        area.up.soil.energy = foreach;
+        area.up_right.soil.energy = foreach;
+        area.left.soil.energy = foreach;
+        area.center.soil.energy = foreach;
+        area.right.soil.energy = foreach;
+        area.down_left.soil.energy = foreach;
+        area.down.soil.energy = foreach;
+        area.down_right.soil.energy = foreach;
     }
 }
 

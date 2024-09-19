@@ -23,13 +23,50 @@ impl Plugin for ControlPlugin {
     }
 }
 
-fn keyboard_input(keys: Res<ButtonInput<KeyCode>>, mut state: ResMut<State>) {
+fn keyboard_input(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut state: ResMut<State>,
+    mut maps: Query<(&Handle<Map>, &mut Visibility)>,
+) {
     if keys.just_pressed(KeyCode::Space) {
         state.paused = !state.paused;
     }
 
-    if keys.just_pressed(KeyCode::KeyR) {
-        state.restart = true;
+    if keys.just_pressed(KeyCode::KeyI) {
+        state.initialized = false;
+    }
+
+    if keys.just_pressed(KeyCode::KeyO) {
+        let (_, mut visibility) = maps.iter_mut().nth(0).unwrap();
+        if state.organic_visible {
+            *visibility = Visibility::Hidden;
+            state.organic_visible = false;
+        } else {
+            *visibility = Visibility::Visible;
+            state.organic_visible = true;
+        }
+    }
+
+    if keys.just_pressed(KeyCode::KeyL) {
+        let (_, mut visibility) = maps.iter_mut().nth(1).unwrap();
+        if state.life_visible {
+            *visibility = Visibility::Hidden;
+            state.life_visible = false;
+        } else {
+            *visibility = Visibility::Visible;
+            state.life_visible = true;
+        }
+    }
+
+    if keys.just_pressed(KeyCode::KeyP) {
+        let (_, mut visibility) = maps.iter_mut().nth(2).unwrap();
+        if state.pollution_visible {
+            *visibility = Visibility::Hidden;
+            state.pollution_visible = false;
+        } else {
+            *visibility = Visibility::Visible;
+            state.pollution_visible = true;
+        }
     }
 }
 
