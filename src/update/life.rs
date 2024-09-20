@@ -1,5 +1,5 @@
 use crate::{
-    all_directions, cell_directions, cell_op_directions,
+    all_directions, cell_directions, cell_op_directions_enum, cell_op_directions_with_enum,
     cells::{
         life_cell::{AliveCell, BirthDirective, LifeCell::*, LifeType::*},
         soil_cell::{MAX_ENERGY_LIFE, MAX_ORGANIC_LIFE},
@@ -132,7 +132,6 @@ fn reroute_energy_paths(area: &mut Area<WorldCell>, life: &mut AliveCell, parent
         };
     }
 
-    life.parent_dir = None;
     match parent_dir {
         Up => reroute!(up, down),
         Down => reroute!(down, up),
@@ -204,10 +203,7 @@ fn try_birth(area: &mut Area<WorldCell>, life: &mut AliveCell, birth_directive: 
             };
         }
 
-        try_newborn!(up, Down);
-        try_newborn!(down, Up);
-        try_newborn!(left, Right);
-        try_newborn!(right, Left);
+        cell_op_directions_enum!(try_newborn);
 
         // Cell rebirth
         if born_once {
@@ -241,11 +237,11 @@ fn kill(area: &mut Area<WorldCell>) {
     // Reroute energy of neighbors
     {
         macro_rules! reroute {
-            ($dir:ident,$op_dir:ident) => {
+            ($dir:ident,$op_dir:ident, $op_dir_enum: ident) => {
                 if let Alive(mut $dir) = area.$dir.life {
                     $dir.energy_to.$op_dir = false;
 
-                    if let Some(Down) = $dir.parent_dir {
+                    if let Some($op_dir_enum) = $dir.parent_dir {
                         $dir.parent_dir = None;
                     }
 
@@ -254,6 +250,6 @@ fn kill(area: &mut Area<WorldCell>) {
             };
         }
 
-        cell_op_directions!(reroute);
+        cell_op_directions_with_enum!(reroute);
     }
 }

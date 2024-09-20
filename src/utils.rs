@@ -90,11 +90,21 @@ macro_rules! cell_directions {
 }
 
 #[macro_export]
-macro_rules! cell_op_directions {
+macro_rules! cell_op_directions_with_enum {
     ($macro: ident) => {
-        $macro!(up, down);
-        $macro!(down, up);
-        $macro!(left, right);
-        $macro!(right, left);
+        $macro!(up, down, Down);
+        $macro!(down, up, Up);
+        $macro!(left, right, Right);
+        $macro!(right, left, Left);
+    };
+}
+
+#[macro_export]
+macro_rules! cell_op_directions_enum {
+    ($macro: ident) => {
+        $macro!(up, Down);
+        $macro!(down, Up);
+        $macro!(left, Right);
+        $macro!(right, Left);
     };
 }

@@ -1,6 +1,10 @@
 use genome::Genome;
 
-use crate::{grid::Area, types::CellDir, utils::merge_energy};
+use crate::{
+    grid::Area,
+    types::CellDir::{self, *},
+    utils::merge_energy,
+};
 
 use super::WorldCell;
 
@@ -18,7 +22,7 @@ impl LifeCell {
     pub const fn texture_id(&self, area: &Area<WorldCell>) -> u32 {
         match self {
             Self::Alive(alive_life_cell) => alive_life_cell.texture_id(area),
-            Self::Dead => 0,
+            Self::Dead => 16,
         }
     }
 
@@ -110,28 +114,72 @@ impl AliveCell {
     pub const fn texture_id(&self, area: &Area<WorldCell>) -> u32 {
         match self.ty {
             LifeType::Pipe => match merge_energy(&area, self.energy_to).to_tuple() {
-                (false, false, false, false) => 7,
-                (true, true, false, false) => 8,
-                (false, false, true, true) => 9,
-                (true, true, true, true) => 10,
-                (false, true, true, false) => 11,
-                (true, false, true, false) => 12,
-                (true, false, false, true) => 13,
-                (false, true, false, true) => 14,
-                (false, true, true, true) => 15,
-                (true, true, true, false) => 16,
-                (true, false, true, true) => 17,
-                (true, true, false, true) => 18,
-                (false, true, false, false) => 19,
-                (false, false, true, false) => 20,
-                (true, false, false, false) => 21,
-                (false, false, false, true) => 22,
+                (false, false, false, false) => 0,
+                (true, true, false, false) => 1,
+                (false, false, true, true) => 2,
+                (true, true, true, true) => 3,
+                (false, true, true, false) => 4,
+                (true, false, true, false) => 5,
+                (true, false, false, true) => 6,
+                (false, true, false, true) => 7,
+                (false, true, true, true) => 8,
+                (true, true, true, false) => 9,
+                (true, false, true, true) => 10,
+                (true, true, false, true) => 11,
+                (false, true, false, false) => 12,
+                (false, false, true, false) => 13,
+                (true, false, false, false) => 14,
+                (false, false, false, true) => 15,
             },
-            LifeType::Leaf => 2,
-            LifeType::Cancer => 6,
-            LifeType::Stem(_) => 1,
-            LifeType::Root => 3,
-            LifeType::Reactor => 4,
+            LifeType::Leaf => {
+                if let Some(dir) = self.parent_dir {
+                    match dir {
+                        Up => 23,
+                        Down => 24,
+                        Left => 25,
+                        Right => 26,
+                    }
+                } else {
+                    22
+                }
+            }
+            LifeType::Cancer => 42,
+            LifeType::Stem(_) => {
+                if let Some(dir) = self.parent_dir {
+                    match dir {
+                        Up => 18,
+                        Down => 19,
+                        Left => 20,
+                        Right => 21,
+                    }
+                } else {
+                    17
+                }
+            }
+            LifeType::Root => {
+                if let Some(dir) = self.parent_dir {
+                    match dir {
+                        Up => 28,
+                        Down => 29,
+                        Left => 30,
+                        Right => 31,
+                    }
+                } else {
+                    27
+                }
+            }
+            LifeType::Reactor => {
+                if let Some(dir) = self.parent_dir {
+                    match dir {
+                        Up => 33,
+                        Down => 34,
+                        Left => 35,
+                        Right => 36,
+                    }
+                } else {
+                    32
+                }
+            }
         }
     }
 
@@ -263,25 +311,25 @@ pub struct EnergyDirections {
 impl EnergyDirections {
     pub const fn from_direction(dir: &CellDir) -> Self {
         match dir {
-            CellDir::Up => EnergyDirections {
+            Up => EnergyDirections {
                 up: true,
                 down: false,
                 left: false,
                 right: false,
             },
-            CellDir::Down => EnergyDirections {
+            Down => EnergyDirections {
                 up: false,
                 down: true,
                 left: false,
                 right: false,
             },
-            CellDir::Left => EnergyDirections {
+            Left => EnergyDirections {
                 up: false,
                 down: false,
                 left: true,
                 right: false,
             },
-            CellDir::Right => EnergyDirections {
+            Right => EnergyDirections {
                 up: false,
                 down: false,
                 left: false,
