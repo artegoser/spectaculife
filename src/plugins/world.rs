@@ -144,7 +144,8 @@ fn update(
 
     for x in &state.cell_order_x {
         for y in &state.cell_order_y {
-            update_area(Area::new(&mut *world, *x, *y));
+            let mut area = Area::new(&mut *world, *x, *y);
+            update_area(&mut area);
         }
     }
 
