@@ -72,6 +72,13 @@ fn startup(
     )
     .build();
 
+    let energy_directions_map = Map::builder(
+        uvec2(settings.w, settings.h),
+        asset_server.load("energy_directions.png"),
+        vec2(16., 16.),
+    )
+    .build();
+
     commands.spawn(MapBundleManaged {
         material: materials.add(organics_map),
         transform: Transform::default().with_scale(vec3(16., 16., 1.)),
@@ -87,7 +94,7 @@ fn startup(
     commands.spawn(MapBundleManaged {
         material: materials.add(pollution_map),
         transform: Transform::default()
-            .with_translation(vec3(0., 0., 3.))
+            .with_translation(vec3(0., 0., 4.))
             .with_scale(vec3(16., 16., 1.)),
         ..default()
     });
@@ -97,6 +104,12 @@ fn startup(
         transform: Transform::default()
             .with_translation(vec3(0., 0., 1.))
             .with_scale(vec3(16., 16., 1.)),
+        ..default()
+    });
+
+    commands.spawn(MapBundleManaged {
+        material: materials.add(energy_directions_map),
+        transform: Transform::default().with_translation(vec3(0., 0., 3.)),
         ..default()
     });
 }
@@ -141,6 +154,7 @@ fn update(
     let mut life_map = get_map(&maps, &mut *map_materials, 1);
     let mut pollution_map = get_map(&maps, &mut *map_materials, 2);
     let mut soil_energy_map = get_map(&maps, &mut *map_materials, 3);
+    let mut energy_directions_map = get_map(&maps, &mut *map_materials, 4);
 
     for x in &state.cell_order_x {
         for y in &state.cell_order_y {
@@ -159,6 +173,8 @@ fn update(
             let soil_energy_texture =
                 ((area.center.soil.energy * 255. / MAX_ENERGY_LIFE) as u32).min(255);
 
+            let energy_directions_texturue = area.center.life.energy_directions_texture_id();
+
             if organics_map.at(x, y) != organics_texture && state.organic_visible {
                 organics_map.set(x, y, organics_texture);
             }
@@ -173,6 +189,10 @@ fn update(
 
             if soil_energy_map.at(x, y) != soil_energy_texture {
                 soil_energy_map.set(x, y, soil_energy_texture);
+            }
+
+            if energy_directions_map.at(x, y) != energy_directions_texturue {
+                energy_directions_map.set(x, y, energy_directions_texturue);
             }
         }
     }

@@ -26,6 +26,13 @@ impl LifeCell {
         }
     }
 
+    pub const fn energy_directions_texture_id(&self) -> u32 {
+        match self {
+            Self::Alive(alive_life_cell) => alive_life_cell.energy_directions_texture_id(),
+            Self::Dead => 0,
+        }
+    }
+
     pub const fn is_fertile(&self) -> bool {
         match self {
             Self::Alive(alive_cell) => alive_cell.is_fertile(),
@@ -108,6 +115,27 @@ impl AliveCell {
             energy_to,
 
             parent_dir,
+        }
+    }
+
+    pub const fn energy_directions_texture_id(&self) -> u32 {
+        match self.energy_to.to_tuple() {
+            (false, false, false, false) => 0,
+            (true, true, false, false) => 1,
+            (false, false, true, true) => 2,
+            (true, true, true, true) => 3,
+            (false, true, true, false) => 4,
+            (true, false, true, false) => 5,
+            (true, false, false, true) => 6,
+            (false, true, false, true) => 7,
+            (false, true, true, true) => 8,
+            (true, true, true, false) => 9,
+            (true, false, true, true) => 10,
+            (true, true, false, true) => 11,
+            (false, true, false, false) => 12,
+            (false, false, true, false) => 13,
+            (true, false, false, false) => 14,
+            (false, false, false, true) => 15,
         }
     }
 
