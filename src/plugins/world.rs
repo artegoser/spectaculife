@@ -21,7 +21,7 @@ impl Plugin for WorldPlugin {
             .add_plugins(FastTileMapPlugin::default())
             // Systems
             .add_systems(Startup, startup)
-            .add_systems(FixedUpdate, update.run_if(not_paused))
+            .add_systems(FixedUpdate, next_step.run_if(not_paused))
             .add_systems(FixedUpdate, initialize.run_if(not_initialized))
             // Resources
             .insert_resource(Time::<Fixed>::from_seconds(0.1))
@@ -124,7 +124,8 @@ fn initialize(
             let cell = world.get_mut(x as i64, y as i64);
             *cell = WorldCell::default();
 
-            if x % 2 == 0 && y % 2 == 0 {
+            if x == 127 && y == 127 {
+                // if x % 2 == 0 && y % 2 == 0 {
                 let life_cell =
                     AliveCell::new(Stem(rand::random()), 8., EnergyDirections::default(), None);
                 cell.life = LifeCell::Alive(life_cell);
@@ -143,7 +144,7 @@ fn not_initialized(state: Res<State>) -> bool {
     !state.initialized
 }
 
-fn update(
+pub fn next_step(
     mut map_materials: ResMut<Assets<Map>>,
     maps: Query<&Handle<Map>>,
     mut world: ResMut<Grid<WorldCell>>,

@@ -41,6 +41,12 @@ pub struct Coord {
     pub y: u32,
 }
 
+impl Coord {
+    pub fn new(x: u32, y: u32) -> Self {
+        Self { x, y }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Resource)]
 pub struct Settings {
     pub w: u32,

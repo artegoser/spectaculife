@@ -69,7 +69,7 @@ fn generate_energy(area: &mut Area<WorldCell>, life: &mut AliveCell) {
         Leaf => {
             let total = 1.8 / (area.center.air.pollution as f32 / 4.).max(1.);
             life.energy += total;
-            area.center.soil.energy += total * 0.5;
+            area.center.soil.energy += total * 0.25;
         }
         Root => {
             let mut total = 0.0;
@@ -109,12 +109,7 @@ fn generate_energy(area: &mut Area<WorldCell>, life: &mut AliveCell) {
 
             all_directions!(process_energy);
 
-            life.energy += total * 0.6;
-            area.center.soil.organics = area
-                .center
-                .soil
-                .organics
-                .saturating_add((total * 0.2) as u8)
+            life.energy += total * 0.1;
         }
         _ => {}
     }

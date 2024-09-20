@@ -1,11 +1,16 @@
 use bevy::{
-    input::mouse::{MouseMotion, MouseWheel},
+    input::{
+        common_conditions::input_just_pressed,
+        mouse::{MouseMotion, MouseWheel},
+    },
     math::{uvec2, vec3},
     prelude::*,
 };
 use bevy_fast_tilemap::Map;
 
 use crate::types::State;
+
+use super::world::next_step;
 
 #[derive(Default)]
 pub struct ControlPlugin;
@@ -18,6 +23,7 @@ impl Plugin for ControlPlugin {
                 keyboard_input,
                 mouse_controls_camera,
                 update_cursor_position,
+                next_step.run_if(input_just_pressed(KeyCode::KeyN)),
             ),
         );
     }
