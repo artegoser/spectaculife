@@ -5,7 +5,7 @@ use crate::cells::{
 };
 use crate::grid::{Area, Grid};
 use crate::types::{Settings, State};
-use crate::update::update_area;
+use crate::update::update_world;
 use crate::utils::get_map;
 use bevy::math::{uvec2, vec2, vec3};
 use bevy::prelude::*;
@@ -145,7 +145,7 @@ fn update(
     for x in &state.cell_order_x {
         for y in &state.cell_order_y {
             let mut area = Area::new(&mut *world, *x, *y);
-            update_area(&mut area);
+            update_world(&mut area);
         }
     }
 

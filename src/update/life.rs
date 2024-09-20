@@ -9,10 +9,7 @@ use crate::{
     types::CellDir::{self, *},
 };
 
-pub fn update_area(area: &mut Area<WorldCell>) {
-    process_air(area);
-    process_soil(area);
-
+pub fn update_life(area: &mut Area<WorldCell>) {
     if let Alive(mut life) = area.center.life {
         if area.center.soil.organics > MAX_ORGANIC_LIFE || area.center.soil.energy > MAX_ENERGY_LIFE
         {
@@ -142,61 +139,6 @@ fn reroute_energy_paths(area: &mut Area<WorldCell>, life: &mut AliveCell, parent
         Left => reroute!(left, right),
         Right => reroute!(right, left),
     }
-}
-
-fn process_air(area: &mut Area<WorldCell>) {
-    let mut total: u16 = 0;
-
-    total += area.up_left.air.pollution as u16;
-    total += area.up.air.pollution as u16;
-    total += area.up_right.air.pollution as u16;
-    total += area.left.air.pollution as u16;
-    total += area.center.air.pollution as u16;
-    total += area.right.air.pollution as u16;
-    total += area.down_left.air.pollution as u16;
-    total += area.down.air.pollution as u16;
-    total += area.down_right.air.pollution as u16;
-
-    let foreach: u8 = (total / 9) as u8;
-    let left = (total - (foreach as u16 * 9)) as u8;
-
-    if left == 0 && foreach != 0 && foreach != 255 {
-        area.up_left.air.pollution = foreach - 1;
-        area.up.air.pollution = foreach - 1;
-        area.up_right.air.pollution = foreach;
-        area.left.air.pollution = foreach - 1;
-        area.center.air.pollution = foreach;
-        area.right.air.pollution = foreach + 1;
-        area.down_left.air.pollution = foreach;
-        area.down.air.pollution = foreach + 1;
-        area.down_right.air.pollution = foreach + 1;
-    }
-}
-
-fn process_soil(area: &mut Area<WorldCell>) {
-    let mut total: f32 = 0.;
-
-    total += area.up_left.soil.energy;
-    total += area.up.soil.energy;
-    total += area.up_right.soil.energy;
-    total += area.left.soil.energy;
-    total += area.center.soil.energy;
-    total += area.right.soil.energy;
-    total += area.down_left.soil.energy;
-    total += area.down.soil.energy;
-    total += area.down_right.soil.energy;
-
-    let foreach = total / 9.0025;
-
-    area.up_left.soil.energy = foreach;
-    area.up.soil.energy = foreach;
-    area.up_right.soil.energy = foreach;
-    area.left.soil.energy = foreach;
-    area.center.soil.energy = foreach;
-    area.right.soil.energy = foreach;
-    area.down_left.soil.energy = foreach;
-    area.down.soil.energy = foreach;
-    area.down_right.soil.energy = foreach;
 }
 
 /// Transfer energy
