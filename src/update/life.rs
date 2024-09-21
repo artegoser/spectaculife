@@ -3,7 +3,7 @@ use crate::{
     cells::{
         life_cell::{
             genome::{GeneAction::*, Genome},
-            AliveCell,
+            AliveCell, EnergyDirections,
             LifeCell::{self, *},
             LifeType::*,
         },
@@ -53,16 +53,11 @@ pub fn update_life(area: &mut Area<WorldCell>) {
             transfer_energy(area, &mut life);
         }
 
-        // Process fertile cells
+        // Process active cells
         match life.ty {
-            Stem(genome) => try_gene(area, &mut life, genome),
-            // Cancer => {
-            //     try_gene(
-            //         area,
-            //         &mut life,
-            //         BirthDirective::new(Some(Cancer), Some(Cancer), Some(Cancer), Some(Cancer)),
-            //     );
-            // }
+            Stem(genome) => {
+                process_genome(area, &mut life, genome);
+            }
             _ => {}
         };
 
@@ -116,6 +111,34 @@ fn generate_energy(area: &mut Area<WorldCell>, life: &mut AliveCell) {
             all_directions!(process_energy);
 
             life.energy += total * 0.1;
+        }
+        Filter => {
+            let mut total = 0.0;
+
+            macro_rules! process_pollution {
+                ($dir: ident) => {
+                    if area.$dir.air.pollution <= 8 && area.$dir.air.pollution > 0 {
+                        area.$dir.air.pollution -= 1;
+                        total += 1.;
+                    } else {
+                        let pollution = (area.$dir.air.pollution as f32 * 0.16) as u8;
+                        area.$dir.air.pollution -= pollution;
+
+                        total += pollution as f32;
+
+                        area.$dir.soil.organics = area.$dir.soil.organics.saturating_add(pollution);
+                    };
+                };
+            }
+
+            all_directions!(process_pollution);
+
+            life.energy += total * 0.4;
+            area.center.soil.organics = area
+                .center
+                .soil
+                .organics
+                .saturating_add((total * 0.3) as u8);
         }
         _ => {}
     }
@@ -179,7 +202,7 @@ fn transfer_energy(area: &mut Area<WorldCell>, life: &mut AliveCell) {
     cell_directions!(transfer);
 }
 
-fn try_gene(area: &mut Area<WorldCell>, life: &mut AliveCell, mut genome: Genome) {
+fn process_genome(area: &mut Area<WorldCell>, life: &mut AliveCell, mut genome: Genome) {
     let gene = genome.genes[genome.active_gene as usize];
     let energy_capacity = gene.energy_capacity();
 
@@ -218,8 +241,13 @@ fn try_gene(area: &mut Area<WorldCell>, life: &mut AliveCell, mut genome: Genome
                     MakeReactor(steps_to_death) => {
                         try_birth!($dir, $op_dir, Reactor, steps_to_death);
                     }
+                    MakeFilter(steps_to_death) => {
+                        try_birth!($dir, $op_dir, Filter, steps_to_death);
+                    }
                     MultiplySelf(steps_to_death, next_gene) => {
+                        genome.mutate();
                         genome.active_gene = next_gene;
+
                         try_birth!($dir, $op_dir, Stem(genome), steps_to_death);
                     }
                     KillCell => {

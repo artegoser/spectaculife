@@ -166,41 +166,52 @@ impl AliveCell {
             LifeType::Leaf => {
                 if let Some(dir) = self.parent_dir {
                     match dir {
-                        Up => 23,
-                        Down => 24,
-                        Left => 25,
-                        Right => 26,
+                        Up => 21,
+                        Down => 22,
+                        Left => 23,
+                        Right => 24,
                     }
                 } else {
-                    22
+                    16
                 }
             }
-            LifeType::Cancer => 42,
             LifeType::Stem(_) => {
                 if let Some(dir) = self.parent_dir {
                     match dir {
-                        Up => 18,
-                        Down => 19,
-                        Left => 20,
-                        Right => 21,
+                        Up => 17,
+                        Down => 18,
+                        Left => 19,
+                        Right => 20,
                     }
                 } else {
-                    17
+                    16
                 }
             }
             LifeType::Root => {
                 if let Some(dir) = self.parent_dir {
                     match dir {
-                        Up => 28,
-                        Down => 29,
-                        Left => 30,
-                        Right => 31,
+                        Up => 25,
+                        Down => 26,
+                        Left => 27,
+                        Right => 28,
                     }
                 } else {
-                    27
+                    16
                 }
             }
             LifeType::Reactor => {
+                if let Some(dir) = self.parent_dir {
+                    match dir {
+                        Up => 29,
+                        Down => 30,
+                        Left => 31,
+                        Right => 32,
+                    }
+                } else {
+                    16
+                }
+            }
+            LifeType::Filter => {
                 if let Some(dir) = self.parent_dir {
                     match dir {
                         Up => 33,
@@ -209,7 +220,7 @@ impl AliveCell {
                         Right => 36,
                     }
                 } else {
-                    32
+                    16
                 }
             }
         }
@@ -250,9 +261,9 @@ pub enum LifeType {
     Leaf,
     Root,
     Reactor,
+    Filter,
 
     Stem(Genome),
-    Cancer,
 }
 
 impl LifeType {
@@ -262,28 +273,28 @@ impl LifeType {
 
     pub const fn is_energy_generator(&self) -> bool {
         match self {
-            LifeType::Leaf | LifeType::Root | LifeType::Reactor => true,
+            LifeType::Leaf | LifeType::Root | LifeType::Reactor | LifeType::Filter => true,
             _ => false,
         }
     }
 
     pub const fn is_pipe(&self) -> bool {
         match self {
-            LifeType::Pipe | LifeType::Cancer => true,
+            LifeType::Pipe => true,
             _ => false,
         }
     }
 
     pub const fn is_pipe_recipient(&self) -> bool {
         match self {
-            LifeType::Pipe | LifeType::Cancer | LifeType::Stem(_) => true,
+            LifeType::Pipe | LifeType::Stem(_) => true,
             _ => false,
         }
     }
 
     pub const fn is_fertile(&self) -> bool {
         match self {
-            LifeType::Stem(_) | LifeType::Cancer => true,
+            LifeType::Stem(_) => true,
             _ => false,
         }
     }
@@ -292,10 +303,10 @@ impl LifeType {
         match self {
             LifeType::Pipe => 0.1,
             LifeType::Leaf => 0.5,
-            LifeType::Cancer => 1.,
             LifeType::Stem(_) => 0.1,
             LifeType::Root => 0.5,
             LifeType::Reactor => 0.7,
+            LifeType::Filter => 0.2,
         }
     }
 
@@ -303,10 +314,10 @@ impl LifeType {
         match self {
             LifeType::Pipe => 1,
             LifeType::Leaf => 2,
-            LifeType::Cancer => 3,
             LifeType::Stem(_) => 1,
             LifeType::Root => 2,
             LifeType::Reactor => 1,
+            LifeType::Filter => 3,
         }
     }
 

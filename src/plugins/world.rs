@@ -21,12 +21,11 @@ impl Plugin for WorldPlugin {
             .add_plugins(FastTileMapPlugin::default())
             // Systems
             .add_systems(Startup, startup)
-            .add_systems(FixedUpdate, next_step.run_if(not_paused))
-            .add_systems(FixedUpdate, initialize.run_if(not_initialized))
+            .add_systems(Update, next_step.run_if(not_paused))
+            .add_systems(Update, initialize.run_if(not_initialized))
             // Resources
-            .insert_resource(Time::<Fixed>::from_seconds(0.1))
             .insert_resource(Grid::<WorldCell>::default())
-            .insert_resource(Settings { w: 256, h: 256 })
+            .insert_resource(Settings { w: 512, h: 256 })
             .insert_resource(State::default());
     }
 }

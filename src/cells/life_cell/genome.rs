@@ -1,14 +1,31 @@
 use rand::{
     distributions::{Distribution, Standard},
-    Rng,
+    thread_rng, Rng,
 };
 
+use crate::types::CellDir;
+
 pub const MAX_GENES: u8 = 32;
+pub const MUTATION_RATE: u32 = 25;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Genome {
     pub active_gene: u8,
     pub genes: [Gene; MAX_GENES as usize],
+}
+
+impl Genome {
+    pub fn mutate(&mut self) {
+        let mut rng = thread_rng();
+
+        if rng.gen_ratio(MUTATION_RATE, 100) {
+            let gene = self
+                .genes
+                .get_mut(rng.gen_range(0..MAX_GENES) as usize)
+                .unwrap();
+            *gene = rng.gen();
+        }
+    }
 }
 
 impl Distribution<Genome> for Standard {
@@ -53,6 +70,7 @@ pub enum GeneAction {
     MakeLeaf(u8),
     MakeRoot(u8),
     MakeReactor(u8),
+    MakeFilter(u8),
     MultiplySelf(u8, u8),
     KillCell,
     Nothing,
@@ -66,19 +84,22 @@ impl GeneAction {
             GeneAction::MakeReactor(_) => 1.4,
             GeneAction::MultiplySelf(_, _) => 0.2,
             GeneAction::Nothing => 0.,
-            GeneAction::KillCell => 2.0,
+            GeneAction::KillCell => 0.5,
+            GeneAction::MakeFilter(_) => 1.,
         }
     }
 }
 
 impl Distribution<GeneAction> for Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> GeneAction {
-        match rng.gen_range(0..=100) {
-            0..=16 => GeneAction::MultiplySelf(rng.gen_range(1..255), rng.gen_range(0..MAX_GENES)),
-            17..=32 => GeneAction::MakeLeaf(rng.gen_range(1..255)),
-            33..=48 => GeneAction::MakeRoot(rng.gen_range(1..255)),
-            49..=64 => GeneAction::MakeReactor(rng.gen_range(1..255)),
-            65..=80 => GeneAction::KillCell,
+        match rng.gen_range(0..=12) {
+            0 => GeneAction::MultiplySelf(rng.gen_range(1..255), rng.gen_range(0..MAX_GENES)),
+            1 => GeneAction::MakeLeaf(rng.gen_range(1..255)),
+            2 => GeneAction::MakeRoot(rng.gen_range(1..255)),
+            3 => GeneAction::MakeReactor(rng.gen_range(1..255)),
+            4 => GeneAction::KillCell,
+            5 => GeneAction::MakeFilter(rng.gen_range(1..255)),
+
             _ => GeneAction::Nothing,
         }
     }
