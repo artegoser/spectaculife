@@ -5,7 +5,10 @@ mod types;
 mod update;
 mod utils;
 
-use bevy::{diagnostic::FrameTimeDiagnosticsPlugin, prelude::*};
+use bevy::{
+    diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
+    prelude::*,
+};
 use plugins::{control, world::WorldPlugin};
 
 fn main() {
@@ -19,6 +22,7 @@ fn main() {
                 ..default()
             }),
             FrameTimeDiagnosticsPlugin::default(),
+            LogDiagnosticsPlugin::default(),
             control::ControlPlugin::default(),
             WorldPlugin::default(),
         ))

@@ -124,10 +124,14 @@ fn initialize(
             let cell = world.get_mut(x as i64, y as i64);
             *cell = WorldCell::default();
 
-            if x == 127 && y == 127 {
-                // if x % 2 == 0 && y % 2 == 0 {
-                let life_cell =
-                    AliveCell::new(Stem(rand::random()), 8., EnergyDirections::default(), None);
+            if x % 2 == 0 && y % 2 == 0 {
+                let life_cell = AliveCell::new(
+                    Stem(rand::random()),
+                    8.,
+                    EnergyDirections::default(),
+                    None,
+                    16,
+                );
                 cell.life = LifeCell::Alive(life_cell);
             }
         }

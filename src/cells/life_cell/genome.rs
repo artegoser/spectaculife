@@ -1,4 +1,3 @@
-use super::{BirthDirective, LifeType};
 use rand::{
     distributions::{Distribution, Standard},
     Rng,
@@ -27,54 +26,47 @@ pub struct Gene {
     pub down: GeneAction,
     pub left: GeneAction,
     pub right: GeneAction,
-
-    pub next_gene: u8,
 }
 
 impl Gene {
-    pub fn to_birth_directive(&self, genome: Genome) -> BirthDirective {
-        BirthDirective::new(
-            self.up.to_life_type(genome),
-            self.down.to_life_type(genome),
-            self.left.to_life_type(genome),
-            self.right.to_life_type(genome),
-        )
+    pub fn energy_capacity(&self) -> f32 {
+        self.up.energy_capacity()
+            + self.down.energy_capacity()
+            + self.left.energy_capacity()
+            + self.right.energy_capacity()
     }
 }
 
 impl Distribution<Gene> for Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Gene {
         Gene {
-            up: rand::random(),
-            down: rand::random(),
-            left: rand::random(),
-            right: rand::random(),
-            next_gene: rng.gen_range(0..MAX_GENES),
+            up: rng.gen(),
+            down: rng.gen(),
+            left: rng.gen(),
+            right: rng.gen(),
         }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum GeneAction {
-    MakeLeaf,
-    MakeRoot,
-    MakeReactor,
-    MultiplySelf(u8),
+    MakeLeaf(u8),
+    MakeRoot(u8),
+    MakeReactor(u8),
+    MultiplySelf(u8, u8),
+    KillCell,
     Nothing,
 }
 
 impl GeneAction {
-    pub fn to_life_type(&self, mut genome: Genome) -> Option<LifeType> {
+    pub const fn energy_capacity(&self) -> f32 {
         match self {
-            GeneAction::MakeLeaf => Some(LifeType::Leaf),
-            GeneAction::MakeRoot => Some(LifeType::Root),
-            GeneAction::MultiplySelf(next_gene) => {
-                genome.active_gene = *next_gene;
-
-                Some(LifeType::Stem(genome))
-            }
-            GeneAction::Nothing => None,
-            GeneAction::MakeReactor => Some(LifeType::Reactor),
+            GeneAction::MakeLeaf(_) => 1.,
+            GeneAction::MakeRoot(_) => 1.,
+            GeneAction::MakeReactor(_) => 1.4,
+            GeneAction::MultiplySelf(_, _) => 0.2,
+            GeneAction::Nothing => 0.,
+            GeneAction::KillCell => 2.0,
         }
     }
 }
@@ -82,10 +74,11 @@ impl GeneAction {
 impl Distribution<GeneAction> for Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> GeneAction {
         match rng.gen_range(0..=100) {
-            0..=30 => GeneAction::MultiplySelf(rng.gen_range(0..MAX_GENES)),
-            31..=50 => GeneAction::MakeLeaf,
-            51..=70 => GeneAction::MakeRoot,
-            71..=80 => GeneAction::MakeReactor,
+            0..=16 => GeneAction::MultiplySelf(rng.gen_range(1..255), rng.gen_range(0..MAX_GENES)),
+            17..=32 => GeneAction::MakeLeaf(rng.gen_range(1..255)),
+            33..=48 => GeneAction::MakeRoot(rng.gen_range(1..255)),
+            49..=64 => GeneAction::MakeReactor(rng.gen_range(1..255)),
+            65..=80 => GeneAction::KillCell,
             _ => GeneAction::Nothing,
         }
     }

@@ -8,7 +8,7 @@ use crate::{
 
 use super::WorldCell;
 
-mod genome;
+pub mod genome;
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum LifeCell {
@@ -95,26 +95,30 @@ pub struct AliveCell {
     pub ty: LifeType,
 
     pub energy: f32,
-
     pub energy_to: EnergyDirections,
 
     pub parent_dir: Option<CellDir>,
+
+    pub steps_to_death: u8,
 }
 
 impl AliveCell {
-    pub fn new(
+    pub const fn new(
         ty: LifeType,
         energy: f32,
         energy_to: EnergyDirections,
         parent_dir: Option<CellDir>,
+        steps_to_death: u8,
     ) -> Self {
         Self {
             ty,
-            energy,
 
+            energy,
             energy_to,
 
             parent_dir,
+
+            steps_to_death,
         }
     }
 
@@ -306,24 +310,29 @@ impl LifeType {
         }
     }
 
-    pub fn birth_capacity(&self) -> f32 {
-        2. * self.consumption()
-    }
-
-    pub fn make_newborn_cell(self, parent_dir: CellDir) -> LifeCell {
+    pub const fn make_newborn_cell(
+        self,
+        parent_dir: CellDir,
+        new_cell_energy: f32,
+        steps_to_death: u8,
+    ) -> LifeCell {
         let new_cell_energy_directions = if self.is_energy_generator() {
             EnergyDirections::from_direction(&parent_dir)
         } else {
-            EnergyDirections::default()
+            EnergyDirections {
+                up: false,
+                down: false,
+                left: false,
+                right: false,
+            }
         };
-
-        let new_cell_energy = self.birth_capacity() * 0.8;
 
         LifeCell::Alive(AliveCell::new(
             self,
             new_cell_energy,
             new_cell_energy_directions,
             Some(parent_dir),
+            steps_to_death,
         ))
     }
 }
@@ -391,72 +400,4 @@ impl EnergyDirections {
     pub const fn to_tuple(&self) -> (bool, bool, bool, bool) {
         (self.up, self.down, self.left, self.right)
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub struct BirthDirective {
-    pub up: Option<LifeType>,
-    pub down: Option<LifeType>,
-    pub left: Option<LifeType>,
-    pub right: Option<LifeType>,
-}
-
-impl BirthDirective {
-    pub fn new(
-        up: Option<LifeType>,
-        down: Option<LifeType>,
-        left: Option<LifeType>,
-        right: Option<LifeType>,
-    ) -> Self {
-        Self {
-            up,
-            down,
-            left,
-            right,
-        }
-    }
-
-    pub fn energy_capacity(&self) -> f32 {
-        let mut total = 0.;
-
-        if let Some(life_type) = self.up {
-            total += life_type.birth_capacity()
-        }
-
-        if let Some(life_type) = self.down {
-            total += life_type.birth_capacity()
-        }
-
-        if let Some(life_type) = self.left {
-            total += life_type.birth_capacity()
-        }
-
-        if let Some(life_type) = self.right {
-            total += life_type.birth_capacity()
-        }
-
-        total
-    }
-
-    // pub const fn cell_amount(&self) -> u8 {
-    //     let mut total = 0;
-
-    //     if self.up.is_some() {
-    //         total += 1
-    //     };
-
-    //     if self.down.is_some() {
-    //         total += 1
-    //     };
-
-    //     if self.left.is_some() {
-    //         total += 1
-    //     };
-
-    //     if self.right.is_some() {
-    //         total += 1
-    //     };
-
-    //     total
-    // }
 }

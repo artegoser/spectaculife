@@ -1,7 +1,12 @@
 use crate::{
     all_directions, cell_directions, cell_op_directions_enum, cell_op_directions_with_enum,
     cells::{
-        life_cell::{AliveCell, BirthDirective, LifeCell::*, LifeType::*},
+        life_cell::{
+            genome::{GeneAction::*, Genome},
+            AliveCell,
+            LifeCell::{self, *},
+            LifeType::*,
+        },
         soil_cell::{MAX_ENERGY_LIFE, MAX_ORGANIC_LIFE},
         WorldCell,
     },
@@ -11,6 +16,12 @@ use crate::{
 
 pub fn update_life(area: &mut Area<WorldCell>) {
     if let Alive(mut life) = area.center.life {
+        if life.steps_to_death == 0 {
+            return kill(area);
+        } else {
+            life.steps_to_death -= 1;
+        }
+
         if area.center.soil.organics > MAX_ORGANIC_LIFE || area.center.soil.energy > MAX_ENERGY_LIFE
         {
             return kill(area);
@@ -44,21 +55,16 @@ pub fn update_life(area: &mut Area<WorldCell>) {
 
         // Process fertile cells
         match life.ty {
-            Stem(genome) => try_birth(
-                area,
-                &mut life,
-                genome.genes[genome.active_gene as usize].to_birth_directive(genome),
-            ),
-            Cancer => {
-                try_birth(
-                    area,
-                    &mut life,
-                    BirthDirective::new(Some(Cancer), Some(Cancer), Some(Cancer), Some(Cancer)),
-                );
-            }
-
+            Stem(genome) => try_gene(area, &mut life, genome),
+            // Cancer => {
+            //     try_gene(
+            //         area,
+            //         &mut life,
+            //         BirthDirective::new(Some(Cancer), Some(Cancer), Some(Cancer), Some(Cancer)),
+            //     );
+            // }
             _ => {}
-        }
+        };
 
         area.center.life = Alive(life);
     }
@@ -173,35 +179,66 @@ fn transfer_energy(area: &mut Area<WorldCell>, life: &mut AliveCell) {
     cell_directions!(transfer);
 }
 
-/// Try to give birth to cell at given direction
-fn try_birth(area: &mut Area<WorldCell>, life: &mut AliveCell, birth_directive: BirthDirective) {
-    let energy_capacity = birth_directive.energy_capacity();
+fn try_gene(area: &mut Area<WorldCell>, life: &mut AliveCell, mut genome: Genome) {
+    let gene = genome.genes[genome.active_gene as usize];
+    let energy_capacity = gene.energy_capacity();
 
     if life.energy > energy_capacity {
         life.energy -= energy_capacity;
 
-        let mut born_once = false;
+        let mut action_once = false;
 
-        macro_rules! try_newborn {
-            ($dir: ident, $op_dir: ident) => {
-                if let Some(cell_type) = birth_directive.$dir {
-                    if area.$dir.life == Dead {
-                        if cell_type.is_fertile() {
-                            life.energy_to.$dir = true;
-                        }
-
-                        area.$dir.life = cell_type.make_newborn_cell($op_dir);
-
-                        born_once = true;
+        macro_rules! try_birth {
+            ($dir: ident, $op_dir: ident, $cell_type: expr, $steps_to_death: expr) => {
+                if area.$dir.life == Dead {
+                    if $cell_type.is_fertile() {
+                        life.energy_to.$dir = true;
                     }
+
+                    area.$dir.life = $cell_type.make_newborn_cell(
+                        $op_dir,
+                        gene.$dir.energy_capacity() * 0.8,
+                        $steps_to_death,
+                    );
+
+                    action_once = true;
                 }
             };
         }
 
-        cell_op_directions_enum!(try_newborn);
+        macro_rules! try_action {
+            ($dir: ident, $op_dir: ident) => {
+                match gene.$dir {
+                    MakeLeaf(steps_to_death) => {
+                        try_birth!($dir, $op_dir, Leaf, steps_to_death);
+                    }
+                    MakeRoot(steps_to_death) => {
+                        try_birth!($dir, $op_dir, Root, steps_to_death);
+                    }
+                    MakeReactor(steps_to_death) => {
+                        try_birth!($dir, $op_dir, Reactor, steps_to_death);
+                    }
+                    MultiplySelf(steps_to_death, next_gene) => {
+                        genome.active_gene = next_gene;
+                        try_birth!($dir, $op_dir, Stem(genome), steps_to_death);
+                    }
+                    KillCell => {
+                        if let Alive(mut $dir) = area.$dir.life {
+                            life.energy += $dir.energy * 0.8;
+                            $dir.steps_to_death = 0;
+
+                            area.$dir.life = Alive($dir);
+                        }
+                    }
+                    Nothing => {}
+                };
+            };
+        }
+
+        cell_op_directions_enum!(try_action);
 
         // Cell rebirth
-        if born_once {
+        if action_once {
             life.ty = match life.ty {
                 Stem(_) => Pipe,
 
