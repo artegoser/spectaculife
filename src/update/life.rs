@@ -4,7 +4,12 @@ use crate::{
     all_directions, cell_directions, cell_op_directions_enum, cell_op_directions_with_enum,
     cells::{
         life_cell::{
-            genome::{Gene, GeneAction::*, GeneCondition::*, Genome},
+            genome::{
+                Gene,
+                GeneAction::*,
+                GeneCondition::{self, *},
+                Genome,
+            },
             AliveCell, EnergyDirections,
             LifeCell::{self, *},
             LifeType::*,
@@ -68,8 +73,7 @@ pub fn update_life(area: &mut Area<WorldCell>) {
 }
 
 fn process_genome(area: &mut Area<WorldCell>, life: &mut AliveCell, mut genome: Genome) {
-    let gene = genome.genes[genome.active_gene as usize];
-    // let energy_capacity = ;
+    let gene = genome.get_active_gene();
 
     if life.energy > gene.energy_capacity() {
         let mut birth_once = false;
@@ -96,23 +100,23 @@ fn process_genome(area: &mut Area<WorldCell>, life: &mut AliveCell, mut genome: 
         macro_rules! try_action {
             ($dir: ident, $op_dir: ident) => {
                 match gene.$dir {
-                    MakeLeaf(steps_to_death) => {
-                        try_birth!($dir, $op_dir, Leaf, steps_to_death);
+                    MakeLeaf(lifespan) => {
+                        try_birth!($dir, $op_dir, Leaf, lifespan.l);
                     }
-                    MakeRoot(steps_to_death) => {
-                        try_birth!($dir, $op_dir, Root, steps_to_death);
+                    MakeRoot(lifespan) => {
+                        try_birth!($dir, $op_dir, Root, lifespan.l);
                     }
-                    MakeReactor(steps_to_death) => {
-                        try_birth!($dir, $op_dir, Reactor, steps_to_death);
+                    MakeReactor(lifespan) => {
+                        try_birth!($dir, $op_dir, Reactor, lifespan.l);
                     }
-                    MakeFilter(steps_to_death) => {
-                        try_birth!($dir, $op_dir, Filter, steps_to_death);
+                    MakeFilter(lifespan) => {
+                        try_birth!($dir, $op_dir, Filter, lifespan.l);
                     }
-                    MultiplySelf(steps_to_death, next_gene) => {
+                    MultiplySelf(lifespan, next_gene) => {
                         genome.mutate();
                         genome.active_gene = next_gene;
 
-                        try_birth!($dir, $op_dir, Stem(genome), steps_to_death);
+                        try_birth!($dir, $op_dir, Stem(genome), lifespan.l);
                     }
                     KillCell => {
                         if let Alive(mut $dir) = area.$dir.life {
@@ -131,12 +135,26 @@ fn process_genome(area: &mut Area<WorldCell>, life: &mut AliveCell, mut genome: 
             };
         }
 
-        if check_gene_condition(area, life, gene) {
-            cell_op_directions_enum!(try_action);
-        } else {
-            genome.active_gene = gene.secondary_gene;
-            life.ty = Stem(genome);
-        }
+        let condition_1 = check_gene_condition(area, life, gene.condition_1, gene.param_1);
+        let condition_2 = check_gene_condition(area, life, gene.condition_2, gene.param_2);
+
+        match (condition_1, condition_2) {
+            (true, true) => {
+                genome.active_gene = gene.alt_gene1;
+                life.ty = Stem(genome);
+            }
+            (true, false) => {
+                genome.active_gene = gene.alt_gene2;
+                life.ty = Stem(genome);
+            }
+            (false, true) => {
+                genome.active_gene = gene.alt_gene3;
+                life.ty = Stem(genome);
+            }
+            (false, false) => {
+                cell_op_directions_enum!(try_action);
+            }
+        };
 
         // Update parent
         if birth_once {
@@ -146,8 +164,13 @@ fn process_genome(area: &mut Area<WorldCell>, life: &mut AliveCell, mut genome: 
     }
 }
 
-fn check_gene_condition(area: &Area<WorldCell>, life: &AliveCell, gene: Gene) -> bool {
-    match gene.condition {
+fn check_gene_condition(
+    area: &Area<WorldCell>,
+    life: &AliveCell,
+    condition: GeneCondition,
+    param: u8,
+) -> bool {
+    match condition {
         LifeUp => area.up.life.is_alive(),
         LifeDown => area.down.life.is_alive(),
         LifeLeft => area.left.life.is_alive(),
@@ -163,28 +186,29 @@ fn check_gene_condition(area: &Area<WorldCell>, life: &AliveCell, gene: Gene) ->
         LethalEnergyLeft => area.left.soil.energy > MAX_ENERGY_LIFE,
         LethalEnergyRight => area.right.soil.energy > MAX_ENERGY_LIFE,
 
-        RandomMT => thread_rng().gen::<u8>() > gene.param,
-        LifeEnergyMT => life.energy > gene.param as f32,
+        RandomMT => thread_rng().gen::<u8>() > param,
+        LifeEnergyMT => life.energy > param as f32,
 
-        OrganicCenterMT => area.center.soil.organics > gene.param,
-        OrganicUpMT => area.up.soil.organics > gene.param,
-        OrganicDownMT => area.down.soil.organics > gene.param,
-        OrganicLeftMT => area.left.soil.organics > gene.param,
-        OrganicRightMT => area.right.soil.organics > gene.param,
+        OrganicCenterMT => area.center.soil.organics > param,
+        OrganicUpMT => area.up.soil.organics > param,
+        OrganicDownMT => area.down.soil.organics > param,
+        OrganicLeftMT => area.left.soil.organics > param,
+        OrganicRightMT => area.right.soil.organics > param,
 
-        SoilEnergyCenterMT => area.center.soil.energy > gene.param as f32,
-        SoilEnergyUpMT => area.up.soil.energy > gene.param as f32,
-        SoilEnergyDownMT => area.down.soil.energy > gene.param as f32,
-        SoilEnergyLeftMT => area.left.soil.energy > gene.param as f32,
-        SoilEnergyRightMT => area.right.soil.energy > gene.param as f32,
+        SoilEnergyCenterMT => area.center.soil.energy > param as f32,
+        SoilEnergyUpMT => area.up.soil.energy > param as f32,
+        SoilEnergyDownMT => area.down.soil.energy > param as f32,
+        SoilEnergyLeftMT => area.left.soil.energy > param as f32,
+        SoilEnergyRightMT => area.right.soil.energy > param as f32,
 
-        AirPollutionCenterMT => area.center.air.pollution > gene.param,
-        AirPollutionUpMT => area.up.air.pollution > gene.param,
-        AirPollutionDownMT => area.down.air.pollution > gene.param,
-        AirPollutionLeftMT => area.left.air.pollution > gene.param,
-        AirPollutionRightMT => area.right.air.pollution > gene.param,
+        AirPollutionCenterMT => area.center.air.pollution > param,
+        AirPollutionUpMT => area.up.air.pollution > param,
+        AirPollutionDownMT => area.down.air.pollution > param,
+        AirPollutionLeftMT => area.left.air.pollution > param,
+        AirPollutionRightMT => area.right.air.pollution > param,
 
         Always => true,
+        Never => false,
     }
 }
 
