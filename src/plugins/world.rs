@@ -1,6 +1,6 @@
 use crate::cells::{
     life_cell::{AliveCell, EnergyDirections, LifeCell, LifeType::*},
-    soil_cell::{MAX_ENERGY_LIFE, MAX_ORGANIC_LIFE},
+    soil_cell::MAX_ENERGY_LIFE,
     WorldCell,
 };
 use crate::grid::{Area, Grid};
@@ -25,7 +25,7 @@ impl Plugin for WorldPlugin {
             .add_systems(Update, initialize.run_if(not_initialized))
             // Resources
             .insert_resource(Grid::<WorldCell>::default())
-            .insert_resource(Settings { w: 256, h: 256 })
+            .insert_resource(Settings { w: 128, h: 128 })
             .insert_resource(State::default());
     }
 }

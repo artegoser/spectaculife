@@ -52,9 +52,9 @@ impl Genome {
         let mut rng = thread_rng();
 
         if rng.gen_ratio(self.mutation_rate.0 as u32, 100) {
-            match rng.gen_range(0..3) {
-                1 => self.mutation_rate = rng.gen(),
-                2 => self.active_gene = rng.gen(),
+            match rng.gen_range(0..=2) {
+                0 => self.mutation_rate = rng.gen(),
+                1 => self.active_gene = rng.gen(),
                 _ => {
                     for i in 0..MAX_GENES {
                         if rng.gen_ratio(self.mutation_rate.0 as u32, 100) {
@@ -95,7 +95,7 @@ impl Genome {
 impl Distribution<Genome> for Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Genome {
         Genome {
-            active_gene: rng.gen(),
+            active_gene: GeneLocation(0),
             genes: rng.gen(),
             mutation_rate: rng.gen(),
         }
@@ -169,6 +169,7 @@ pub enum GeneDirectionAction {
     MakeFilter(LifeSpan),
     MultiplySelf(LifeSpan, GeneLocation),
     KillCell,
+    CreateSeed(LifeSpan),
     Nothing,
 }
 
@@ -179,8 +180,9 @@ impl GeneDirectionAction {
             GeneDirectionAction::MakeRoot(_) => 1.,
             GeneDirectionAction::MakeReactor(_) => 1.4,
             GeneDirectionAction::MultiplySelf(_, _) => 0.2,
+            GeneDirectionAction::CreateSeed(_) => 0.2,
             GeneDirectionAction::Nothing => 0.,
-            GeneDirectionAction::KillCell => 0.5,
+            GeneDirectionAction::KillCell => 0.,
             GeneDirectionAction::MakeFilter(_) => 1.,
         }
     }
@@ -188,13 +190,14 @@ impl GeneDirectionAction {
 
 impl Distribution<GeneDirectionAction> for Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> GeneDirectionAction {
-        match rng.gen_range(0..=6) {
+        match rng.gen_range(0..=7) {
             0 => GeneDirectionAction::MultiplySelf(rng.gen(), rng.gen()),
             1 => GeneDirectionAction::MakeLeaf(rng.gen()),
             2 => GeneDirectionAction::MakeRoot(rng.gen()),
             3 => GeneDirectionAction::MakeReactor(rng.gen()),
             4 => GeneDirectionAction::MakeFilter(rng.gen()),
             5 => GeneDirectionAction::KillCell,
+            6 => GeneDirectionAction::CreateSeed(rng.gen()),
 
             _ => GeneDirectionAction::Nothing,
         }

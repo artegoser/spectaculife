@@ -9,7 +9,7 @@ use crate::{
                 GeneAction::*,
                 GeneCondition::{self, *},
                 GeneDirectionAction::*,
-                Genome,
+                GeneLocation, Genome,
             },
             AliveCell, EnergyDirections,
             LifeCell::{self, *},
@@ -114,14 +114,19 @@ fn process_genome(area: &mut Area<WorldCell>, life: &mut AliveCell, mut genome: 
                         try_birth!($dir, $op_dir, Filter, lifespan.0);
                     }
                     MultiplySelf(lifespan, next_gene) => {
-                        genome.mutate();
                         genome.active_gene = next_gene;
+
+                        try_birth!($dir, $op_dir, Stem(genome), lifespan.0);
+                    }
+                    CreateSeed(lifespan) => {
+                        genome.mutate();
+                        genome.active_gene = GeneLocation(0);
 
                         try_birth!($dir, $op_dir, Stem(genome), lifespan.0);
                     }
                     KillCell => {
                         if let Alive(mut $dir) = area.$dir.life {
-                            life.energy += $dir.energy + $dir.consumption() * 0.8 as f32;
+                            life.energy += $dir.energy + $dir.consumption() as f32;
                             $dir.steps_to_death = 0;
                             $dir.energy = 0.;
 
@@ -135,9 +140,6 @@ fn process_genome(area: &mut Area<WorldCell>, life: &mut AliveCell, mut genome: 
                 };
             };
         }
-
-        let condition_1 = check_gene_condition(area, life, gene.condition_1, gene.param_1);
-        let condition_2 = check_gene_condition(area, life, gene.condition_2, gene.param_2);
 
         if let Some(action_condition) = gene.action_condition {
             if check_gene_condition(area, life, action_condition, gene.action_param) {
@@ -181,6 +183,9 @@ fn process_genome(area: &mut Area<WorldCell>, life: &mut AliveCell, mut genome: 
                 life.ty = Stem(genome);
             }
         } else {
+            let condition_1 = check_gene_condition(area, life, gene.condition_1, gene.param_1);
+            let condition_2 = check_gene_condition(area, life, gene.condition_2, gene.param_2);
+
             match (condition_1, condition_2) {
                 (true, true) => {
                     genome.active_gene = gene.alt_gene1;
@@ -301,7 +306,7 @@ fn generate_energy(area: &mut Area<WorldCell>, life: &mut AliveCell) {
 
             all_directions!(process_energy);
 
-            life.energy += total * 0.1;
+            life.energy += total * 0.8;
         }
         Filter => {
             let mut total = 0.0;
@@ -312,24 +317,17 @@ fn generate_energy(area: &mut Area<WorldCell>, life: &mut AliveCell) {
                         area.$dir.air.pollution -= 1;
                         total += 1.;
                     } else {
-                        let pollution = (area.$dir.air.pollution as f32 * 0.16) as u8;
-                        area.$dir.air.pollution -= pollution;
+                        let pollution = (area.$dir.air.pollution as f32 * 0.16);
+                        area.$dir.air.pollution -= pollution as u8;
 
-                        total += pollution as f32;
-
-                        area.$dir.soil.organics = area.$dir.soil.organics.saturating_add(pollution);
+                        total += pollution;
                     };
                 };
             }
 
             all_directions!(process_pollution);
 
-            life.energy += total * 0.4;
-            area.center.soil.organics = area
-                .center
-                .soil
-                .organics
-                .saturating_add((total * 0.3) as u8);
+            life.energy += total * 0.5;
         }
         _ => {}
     }
