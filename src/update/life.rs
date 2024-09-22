@@ -72,7 +72,7 @@ fn process_genome(area: &mut Area<WorldCell>, life: &mut AliveCell, mut genome: 
     // let energy_capacity = ;
 
     if life.energy > gene.energy_capacity() {
-        let mut action_once = false;
+        let mut birth_once = false;
         let mut total_energy = 0.0;
 
         macro_rules! try_birth {
@@ -88,7 +88,7 @@ fn process_genome(area: &mut Area<WorldCell>, life: &mut AliveCell, mut genome: 
                         $cell_type.make_newborn_cell($op_dir, energy_spent * 0.8, $steps_to_death);
 
                     total_energy += energy_spent;
-                    action_once = true;
+                    birth_once = true;
                 }
             };
         }
@@ -121,6 +121,9 @@ fn process_genome(area: &mut Area<WorldCell>, life: &mut AliveCell, mut genome: 
                             $dir.energy = 0.;
 
                             area.$dir.life = Alive($dir);
+
+                            let energy_spent = gene.$dir.energy_capacity();
+                            total_energy += energy_spent;
                         }
                     }
                     Nothing => {}
@@ -136,7 +139,7 @@ fn process_genome(area: &mut Area<WorldCell>, life: &mut AliveCell, mut genome: 
         }
 
         // Update parent
-        if action_once {
+        if birth_once {
             life.energy -= total_energy;
             life.ty = Pipe;
         }
@@ -180,6 +183,8 @@ fn check_gene_condition(area: &Area<WorldCell>, life: &AliveCell, gene: Gene) ->
         AirPollutionDownMT => area.down.air.pollution > gene.param,
         AirPollutionLeftMT => area.left.air.pollution > gene.param,
         AirPollutionRightMT => area.right.air.pollution > gene.param,
+
+        Always => true,
     }
 }
 

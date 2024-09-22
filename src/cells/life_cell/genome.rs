@@ -21,7 +21,17 @@ impl Genome {
                 .genes
                 .get_mut(rng.gen_range(0..MAX_GENES) as usize)
                 .unwrap();
-            *gene = rng.gen();
+
+            match rng.gen_range(0..8) {
+                0 => gene.up = rng.gen(),
+                1 => gene.down = rng.gen(),
+                2 => gene.left = rng.gen(),
+                3 => gene.right = rng.gen(),
+                4 => gene.condition = rng.gen(),
+                5 => gene.secondary_gene = rng.gen_range(0..MAX_GENES),
+                6 => gene.param = rng.gen(),
+                _ => *gene = rng.gen(),
+            }
         }
     }
 }
@@ -103,13 +113,13 @@ impl GeneAction {
 
 impl Distribution<GeneAction> for Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> GeneAction {
-        match rng.gen_range(0..=12) {
-            0 => GeneAction::MultiplySelf(rng.gen_range(1..255), rng.gen_range(0..MAX_GENES)),
-            1 => GeneAction::MakeLeaf(rng.gen_range(1..255)),
-            2 => GeneAction::MakeRoot(rng.gen_range(1..255)),
-            3 => GeneAction::MakeReactor(rng.gen_range(1..255)),
-            4 => GeneAction::KillCell,
-            5 => GeneAction::MakeFilter(rng.gen_range(1..255)),
+        match rng.gen_range(0..12) {
+            0 => GeneAction::MultiplySelf(rng.gen_range(1..=255), rng.gen_range(0..MAX_GENES)),
+            1 => GeneAction::MakeLeaf(rng.gen_range(1..=255)),
+            2 => GeneAction::MakeRoot(rng.gen_range(1..=255)),
+            3 => GeneAction::MakeReactor(rng.gen_range(1..=255)),
+            4 => GeneAction::MakeFilter(rng.gen_range(1..=255)),
+            5 => GeneAction::KillCell,
 
             _ => GeneAction::Nothing,
         }
@@ -153,12 +163,14 @@ pub enum GeneCondition {
     AirPollutionDownMT,
     AirPollutionLeftMT,
     AirPollutionRightMT,
+
+    Always,
 }
 
 impl Distribution<GeneCondition> for Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> GeneCondition {
         use GeneCondition::*;
-        match rng.gen_range(0..=13) {
+        match rng.gen_range(0..=29) {
             0 => LifeUp,
             1 => LifeDown,
             2 => LifeLeft,
@@ -193,7 +205,9 @@ impl Distribution<GeneCondition> for Standard {
             25 => AirPollutionUpMT,
             26 => AirPollutionDownMT,
             27 => AirPollutionLeftMT,
-            _ => AirPollutionRightMT,
+            28 => AirPollutionRightMT,
+
+            _ => Always,
         }
     }
 }
