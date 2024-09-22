@@ -25,7 +25,7 @@ impl Plugin for WorldPlugin {
             .add_systems(Update, initialize.run_if(not_initialized))
             // Resources
             .insert_resource(Grid::<WorldCell>::default())
-            .insert_resource(Settings { w: 512, h: 256 })
+            .insert_resource(Settings { w: 256, h: 128 })
             .insert_resource(State::default());
     }
 }

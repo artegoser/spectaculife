@@ -151,8 +151,8 @@ pub enum GeneCondition {
     AirPollutionCenterMT,
     AirPollutionUpMT,
     AirPollutionDownMT,
-    AirPollutionEnergyLeftMT,
-    AirPollutionEnergyRightMT,
+    AirPollutionLeftMT,
+    AirPollutionRightMT,
 }
 
 impl Distribution<GeneCondition> for Standard {
@@ -192,8 +192,8 @@ impl Distribution<GeneCondition> for Standard {
             24 => AirPollutionCenterMT,
             25 => AirPollutionUpMT,
             26 => AirPollutionDownMT,
-            27 => AirPollutionEnergyLeftMT,
-            _ => AirPollutionEnergyRightMT,
+            27 => AirPollutionLeftMT,
+            _ => AirPollutionRightMT,
         }
     }
 }

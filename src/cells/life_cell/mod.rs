@@ -166,10 +166,10 @@ impl AliveCell {
             LifeType::Leaf => {
                 if let Some(dir) = self.parent_dir {
                     match dir {
-                        Up => 21,
-                        Down => 22,
-                        Left => 23,
-                        Right => 24,
+                        Up => 22,
+                        Down => 23,
+                        Left => 24,
+                        Right => 25,
                     }
                 } else {
                     16
@@ -178,22 +178,22 @@ impl AliveCell {
             LifeType::Stem(_) => {
                 if let Some(dir) = self.parent_dir {
                     match dir {
-                        Up => 17,
-                        Down => 18,
-                        Left => 19,
-                        Right => 20,
+                        Up => 18,
+                        Down => 19,
+                        Left => 20,
+                        Right => 21,
                     }
                 } else {
-                    16
+                    17
                 }
             }
             LifeType::Root => {
                 if let Some(dir) = self.parent_dir {
                     match dir {
-                        Up => 25,
-                        Down => 26,
-                        Left => 27,
-                        Right => 28,
+                        Up => 26,
+                        Down => 27,
+                        Left => 28,
+                        Right => 29,
                     }
                 } else {
                     16
@@ -202,10 +202,10 @@ impl AliveCell {
             LifeType::Reactor => {
                 if let Some(dir) = self.parent_dir {
                     match dir {
-                        Up => 29,
-                        Down => 30,
-                        Left => 31,
-                        Right => 32,
+                        Up => 30,
+                        Down => 31,
+                        Left => 32,
+                        Right => 33,
                     }
                 } else {
                     16
@@ -214,10 +214,10 @@ impl AliveCell {
             LifeType::Filter => {
                 if let Some(dir) = self.parent_dir {
                     match dir {
-                        Up => 33,
-                        Down => 34,
-                        Left => 35,
-                        Right => 36,
+                        Up => 34,
+                        Down => 35,
+                        Left => 36,
+                        Right => 37,
                     }
                 } else {
                     16

@@ -178,8 +178,8 @@ fn check_gene_condition(area: &Area<WorldCell>, life: &AliveCell, gene: Gene) ->
         AirPollutionCenterMT => area.center.air.pollution > gene.param,
         AirPollutionUpMT => area.up.air.pollution > gene.param,
         AirPollutionDownMT => area.down.air.pollution > gene.param,
-        AirPollutionEnergyLeftMT => area.left.air.pollution > gene.param,
-        AirPollutionEnergyRightMT => area.right.air.pollution > gene.param,
+        AirPollutionLeftMT => area.left.air.pollution > gene.param,
+        AirPollutionRightMT => area.right.air.pollution > gene.param,
     }
 }
 
