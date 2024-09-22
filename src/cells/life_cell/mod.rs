@@ -70,7 +70,7 @@ impl LifeCell {
 
     pub const fn is_alive(&self) -> bool {
         match self {
-            Self::Alive(_) => false,
+            Self::Alive(_) => true,
             Self::Dead => false,
         }
     }

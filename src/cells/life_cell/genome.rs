@@ -3,8 +3,6 @@ use rand::{
     thread_rng, Rng,
 };
 
-use crate::types::CellDir;
-
 pub const MAX_GENES: u8 = 32;
 pub const MUTATION_RATE: u32 = 25;
 
@@ -43,6 +41,10 @@ pub struct Gene {
     pub down: GeneAction,
     pub left: GeneAction,
     pub right: GeneAction,
+
+    pub condition: GeneCondition,
+    pub secondary_gene: u8,
+    pub param: u8,
 }
 
 impl Gene {
@@ -61,6 +63,10 @@ impl Distribution<Gene> for Standard {
             down: rng.gen(),
             left: rng.gen(),
             right: rng.gen(),
+
+            condition: rng.gen(),
+            secondary_gene: rng.gen_range(0..MAX_GENES),
+            param: rng.gen(),
         }
     }
 }
@@ -71,7 +77,12 @@ pub enum GeneAction {
     MakeRoot(u8),
     MakeReactor(u8),
     MakeFilter(u8),
-    MultiplySelf(u8, u8),
+    MultiplySelf(
+        /// LifeSpan
+        u8,
+        /// NextGene
+        u8,
+    ),
     KillCell,
     Nothing,
 }
@@ -101,6 +112,88 @@ impl Distribution<GeneAction> for Standard {
             5 => GeneAction::MakeFilter(rng.gen_range(1..255)),
 
             _ => GeneAction::Nothing,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum GeneCondition {
+    LifeUp,
+    LifeDown,
+    LifeLeft,
+    LifeRight,
+
+    LethalOrganicUp,
+    LethalOrganicDown,
+    LethalOrganicLeft,
+    LethalOrganicRight,
+
+    LethalEnergyUp,
+    LethalEnergyDown,
+    LethalEnergyLeft,
+    LethalEnergyRight,
+
+    RandomMT,
+    LifeEnergyMT,
+
+    OrganicCenterMT,
+    OrganicUpMT,
+    OrganicDownMT,
+    OrganicLeftMT,
+    OrganicRightMT,
+
+    SoilEnergyCenterMT,
+    SoilEnergyUpMT,
+    SoilEnergyDownMT,
+    SoilEnergyLeftMT,
+    SoilEnergyRightMT,
+
+    AirPollutionCenterMT,
+    AirPollutionUpMT,
+    AirPollutionDownMT,
+    AirPollutionEnergyLeftMT,
+    AirPollutionEnergyRightMT,
+}
+
+impl Distribution<GeneCondition> for Standard {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> GeneCondition {
+        use GeneCondition::*;
+        match rng.gen_range(0..=13) {
+            0 => LifeUp,
+            1 => LifeDown,
+            2 => LifeLeft,
+            3 => LifeRight,
+
+            4 => LethalOrganicUp,
+            5 => LethalOrganicDown,
+            6 => LethalOrganicLeft,
+            7 => LethalOrganicRight,
+
+            8 => LethalEnergyUp,
+            9 => LethalEnergyDown,
+            10 => LethalEnergyLeft,
+            11 => LethalEnergyRight,
+
+            12 => RandomMT,
+            13 => LifeEnergyMT,
+
+            14 => OrganicCenterMT,
+            15 => OrganicUpMT,
+            16 => OrganicDownMT,
+            17 => OrganicLeftMT,
+            18 => OrganicRightMT,
+
+            19 => SoilEnergyCenterMT,
+            20 => SoilEnergyUpMT,
+            21 => SoilEnergyDownMT,
+            22 => SoilEnergyLeftMT,
+            23 => SoilEnergyRightMT,
+
+            24 => AirPollutionCenterMT,
+            25 => AirPollutionUpMT,
+            26 => AirPollutionDownMT,
+            27 => AirPollutionEnergyLeftMT,
+            _ => AirPollutionEnergyRightMT,
         }
     }
 }
