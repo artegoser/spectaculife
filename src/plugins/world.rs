@@ -123,7 +123,7 @@ fn initialize(
             let cell = world.get_mut(x as i64, y as i64);
             *cell = WorldCell::default();
 
-            if x % 4 == 0 && y % 4 == 0 {
+            if x % 2 == 0 && y % 2 == 0 {
                 let life_cell = AliveCell::new(
                     Stem(rand::random()),
                     8.,

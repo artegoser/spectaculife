@@ -314,7 +314,7 @@ impl LifeType {
         match self {
             LifeType::Pipe => 1,
             LifeType::Leaf => 2,
-            LifeType::Stem(_) => 1,
+            LifeType::Stem(_) => 2,
             LifeType::Root => 2,
             LifeType::Reactor => 1,
             LifeType::Filter => 3,

@@ -63,6 +63,28 @@ pub const fn merge_energy(
 }
 
 #[macro_export]
+macro_rules! all_foreach_left {
+    ($area: ident, $layer: ident, $val: ident) => {{
+        let mut total: u16 = 0;
+
+        total += $area.up_left.$layer.$val as u16;
+        total += $area.up.$layer.$val as u16;
+        total += $area.up_right.$layer.$val as u16;
+        total += $area.left.$layer.$val as u16;
+        total += $area.center.$layer.$val as u16;
+        total += $area.right.$layer.$val as u16;
+        total += $area.down_left.$layer.$val as u16;
+        total += $area.down.$layer.$val as u16;
+        total += $area.down_right.$layer.$val as u16;
+
+        let foreach: u8 = (total / 9) as u8;
+        let left = (total - (foreach as u16 * 9)) as u8;
+
+        (foreach, left)
+    }};
+}
+
+#[macro_export]
 macro_rules! all_directions {
     ($macro: ident) => {
         $macro!(center);
