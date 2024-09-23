@@ -42,7 +42,6 @@ fn startup(
     commands.spawn(Camera2dBundle::default());
 
     *world = Grid::<WorldCell>::new(settings.w, settings.h);
-    *state = State::from_settings(&settings);
 
     let cell_map = Map::builder(
         uvec2(settings.w, settings.h),
@@ -153,7 +152,7 @@ pub fn next_step(
     maps: Query<&Handle<Map>>,
     mut world: ResMut<Grid<WorldCell>>,
     settings: Res<Settings>,
-    state: ResMut<State>,
+    mut state: ResMut<State>,
 ) {
     let mut organics_map = get_map(&maps, &mut *map_materials, 0);
     let mut life_map = get_map(&maps, &mut *map_materials, 1);
@@ -172,7 +171,7 @@ pub fn next_step(
     for x in &cell_order_x {
         for y in &cell_order_y {
             let mut area = Area::new(&mut *world, *x, *y);
-            update_world(&mut area);
+            update_world(&mut state, &mut area);
         }
     }
 
@@ -209,4 +208,6 @@ pub fn next_step(
             }
         }
     }
+
+    state.simulation_step += 1;
 }

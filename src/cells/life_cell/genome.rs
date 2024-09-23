@@ -36,6 +36,7 @@ impl Distribution<LifeSpan> for Standard {
 pub struct Genome {
     pub genes: [Gene; MAX_GENES as usize],
     pub active_gene: GeneLocation,
+    pub seed_gene: GeneLocation,
     pub mutation_rate: MutationRate,
 }
 
@@ -52,9 +53,10 @@ impl Genome {
         let mut rng = thread_rng();
 
         if rng.gen_ratio(self.mutation_rate.0 as u32, 100) {
-            match rng.gen_range(0..=10) {
+            match rng.gen_range(0..=11) {
                 0 => self.mutation_rate = rng.gen(),
                 1 => self.active_gene = rng.gen(),
+                2 => self.seed_gene = rng.gen(),
                 _ => {
                     for i in 0..MAX_GENES {
                         if rng.gen_ratio(self.mutation_rate.0 as u32, 100) {
@@ -104,8 +106,10 @@ impl Genome {
 
 impl Distribution<Genome> for Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Genome {
+        let seed_gene = rng.gen();
         Genome {
-            active_gene: GeneLocation(0),
+            active_gene: seed_gene,
+            seed_gene,
             genes: rng.gen(),
             mutation_rate: rng.gen(),
         }
@@ -276,12 +280,14 @@ pub enum GeneCondition {
 
     Always,
     Never,
+
+    StepsDividesP,
 }
 
 impl Distribution<GeneCondition> for Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> GeneCondition {
         use GeneCondition::*;
-        match rng.gen_range(0..=30) {
+        match rng.gen_range(0..=31) {
             0 => LifeUp,
             1 => LifeDown,
             2 => LifeLeft,
@@ -319,7 +325,9 @@ impl Distribution<GeneCondition> for Standard {
             28 => AirPollutionRightMT,
 
             29 => Always,
-            _ => Never,
+            30 => Never,
+
+            _ => StepsDividesP,
         }
     }
 }

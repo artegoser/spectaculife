@@ -1,7 +1,6 @@
 use bevy::prelude::Resource;
 use rand::{
     distributions::{Distribution, Standard},
-    seq::SliceRandom,
     Rng,
 };
 
@@ -62,20 +61,8 @@ pub struct State {
     pub organic_visible: bool,
     pub life_visible: bool,
     pub pollution_visible: bool,
-}
 
-impl State {
-    pub fn from_settings(settings: &Settings) -> Self {
-        State {
-            initialized: false,
-            paused: false,
-            cursor_position: Coord::default(),
-
-            organic_visible: true,
-            life_visible: true,
-            pollution_visible: true,
-        }
-    }
+    pub simulation_step: usize,
 }
 
 impl Default for State {
@@ -88,6 +75,8 @@ impl Default for State {
             organic_visible: true,
             life_visible: true,
             pollution_visible: true,
+
+            simulation_step: 0,
         }
     }
 }

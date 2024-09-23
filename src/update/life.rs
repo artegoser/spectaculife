@@ -19,10 +19,13 @@ use crate::{
         WorldCell,
     },
     grid::Area,
-    types::CellDir::{self, *},
+    types::{
+        CellDir::{self, *},
+        State,
+    },
 };
 
-pub fn update_life(area: &mut Area<WorldCell>) {
+pub fn update_life(state: &mut State, area: &mut Area<WorldCell>) {
     if let Alive(mut life) = area.center.life {
         if life.steps_to_death == 0 {
             return kill(area);
@@ -62,7 +65,7 @@ pub fn update_life(area: &mut Area<WorldCell>) {
         // Process genome
         match life.ty {
             Stem(genome) => {
-                process_genome(area, &mut life, genome);
+                process_genome(state, area, &mut life, genome);
             }
             _ => {}
         };
@@ -71,7 +74,12 @@ pub fn update_life(area: &mut Area<WorldCell>) {
     }
 }
 
-fn process_genome(area: &mut Area<WorldCell>, life: &mut AliveCell, mut genome: Genome) {
+fn process_genome(
+    state: &State,
+    area: &mut Area<WorldCell>,
+    life: &mut AliveCell,
+    mut genome: Genome,
+) {
     let total_energy = genome.active_gene().energy_capacity();
 
     if life.energy > total_energy {
@@ -122,7 +130,7 @@ fn process_genome(area: &mut Area<WorldCell>, life: &mut AliveCell, mut genome: 
                     }
                     CreateSeed(lifespan) => {
                         genome.mutate();
-                        genome.active_gene = GeneLocation(0);
+                        genome.active_gene = genome.seed_gene;
 
                         try_birth!($dir, $op_dir, Stem(genome), lifespan.0);
                     }
@@ -170,6 +178,7 @@ fn process_genome(area: &mut Area<WorldCell>, life: &mut AliveCell, mut genome: 
         }
 
         if check_gene_condition(
+            state,
             area,
             life,
             genome.active_gene().main_action_condition,
@@ -180,6 +189,7 @@ fn process_genome(area: &mut Area<WorldCell>, life: &mut AliveCell, mut genome: 
 
         {
             let condition_1 = check_gene_condition(
+                state,
                 area,
                 life,
                 genome.active_gene().additional_action_condition1,
@@ -187,6 +197,7 @@ fn process_genome(area: &mut Area<WorldCell>, life: &mut AliveCell, mut genome: 
             );
 
             let condition_2 = check_gene_condition(
+                state,
                 area,
                 life,
                 genome.active_gene().additional_action_condition2,
@@ -203,6 +214,7 @@ fn process_genome(area: &mut Area<WorldCell>, life: &mut AliveCell, mut genome: 
 
         {
             let condition_1 = check_gene_condition(
+                state,
                 area,
                 life,
                 genome.active_gene().condition_1,
@@ -210,6 +222,7 @@ fn process_genome(area: &mut Area<WorldCell>, life: &mut AliveCell, mut genome: 
             );
 
             let condition_2 = check_gene_condition(
+                state,
                 area,
                 life,
                 genome.active_gene().condition_2,
@@ -246,6 +259,7 @@ fn process_genome(area: &mut Area<WorldCell>, life: &mut AliveCell, mut genome: 
 }
 
 fn check_gene_condition(
+    state: &State,
     area: &Area<WorldCell>,
     life: &AliveCell,
     condition: GeneCondition,
@@ -290,6 +304,8 @@ fn check_gene_condition(
 
         Always => true,
         Never => false,
+
+        StepsDividesP => state.simulation_step % param.max(1) as usize == 0,
     }
 }
 
