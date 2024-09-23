@@ -88,7 +88,7 @@ fn process_genome(
         macro_rules! try_birth {
             ($dir: ident, $op_dir: ident, $cell_type: expr, $steps_to_death: expr) => {{
                 if let Alive(mut $dir) = area.$dir.life {
-                    $dir.steps_to_death = $dir.steps_to_death.saturating_sub(500);
+                    $dir.steps_to_death = $dir.steps_to_death.saturating_sub(250);
                     area.$dir.life = Alive($dir);
                 } else {
                     if $cell_type.is_fertile() {

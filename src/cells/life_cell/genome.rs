@@ -226,7 +226,7 @@ impl GeneDirectionAction {
 
 impl Distribution<GeneDirectionAction> for Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> GeneDirectionAction {
-        match rng.gen_range(0..=7) {
+        match rng.gen_range(0..=8) {
             0 => GeneDirectionAction::MultiplySelf(rng.gen(), rng.gen()),
             1 => GeneDirectionAction::MakeLeaf(rng.gen()),
             2 => GeneDirectionAction::MakeRoot(rng.gen()),
