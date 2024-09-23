@@ -53,13 +53,10 @@ pub fn update_life(area: &mut Area<WorldCell>) {
             }
         }
 
-        // Generate energy
         generate_energy(area, &mut life);
 
         // Transfer energy
-        if life.energy_to.branches_amount() > 0 {
-            transfer_energy(area, &mut life);
-        }
+        transfer_energy(area, &mut life);
 
         // Process genome
         match life.ty {
@@ -74,11 +71,10 @@ pub fn update_life(area: &mut Area<WorldCell>) {
 }
 
 fn process_genome(area: &mut Area<WorldCell>, life: &mut AliveCell, mut genome: Genome) {
-    let gene = genome.get_active_gene();
+    let total_energy = genome.active_gene().energy_capacity();
 
-    if life.energy > gene.energy_capacity() {
+    if life.energy > total_energy {
         let mut birth_once = false;
-        let mut total_energy = 0.0;
 
         macro_rules! try_birth {
             ($dir: ident, $op_dir: ident, $cell_type: expr, $steps_to_death: expr) => {
@@ -87,20 +83,16 @@ fn process_genome(area: &mut Area<WorldCell>, life: &mut AliveCell, mut genome: 
                         life.energy_to.$dir = true;
                     }
 
-                    let energy_spent = gene.$dir.energy_capacity();
+                    area.$dir.life = $cell_type.make_newborn_cell($op_dir, $steps_to_death);
 
-                    area.$dir.life =
-                        $cell_type.make_newborn_cell($op_dir, energy_spent * 0.8, $steps_to_death);
-
-                    total_energy += energy_spent;
                     birth_once = true;
                 }
             };
         }
 
-        macro_rules! try_action {
+        macro_rules! direction_action {
             ($dir: ident, $op_dir: ident) => {
-                match gene.$dir {
+                match genome.active_gene().$dir {
                     MakeLeaf(lifespan) => {
                         try_birth!($dir, $op_dir, Leaf, lifespan.0);
                     }
@@ -115,6 +107,7 @@ fn process_genome(area: &mut Area<WorldCell>, life: &mut AliveCell, mut genome: 
                     }
                     MultiplySelf(lifespan, next_gene) => {
                         genome.active_gene = next_gene;
+                        genome.mutate();
 
                         try_birth!($dir, $op_dir, Stem(genome), lifespan.0);
                     }
@@ -127,13 +120,11 @@ fn process_genome(area: &mut Area<WorldCell>, life: &mut AliveCell, mut genome: 
                     KillCell => {
                         if let Alive(mut $dir) = area.$dir.life {
                             life.energy += $dir.energy + $dir.consumption() as f32;
+
                             $dir.steps_to_death = 0;
                             $dir.energy = 0.;
 
                             area.$dir.life = Alive($dir);
-
-                            let energy_spent = gene.$dir.energy_capacity();
-                            total_energy += energy_spent;
                         }
                     }
                     Nothing => {}
@@ -141,17 +132,17 @@ fn process_genome(area: &mut Area<WorldCell>, life: &mut AliveCell, mut genome: 
             };
         }
 
-        if let Some(action_condition) = gene.action_condition {
-            if check_gene_condition(area, life, action_condition, gene.action_param) {
-                macro_rules! move_organic {
-                    ($from: ident, $to: ident) => {{
-                        let to_move = (255 - area.$to.soil.organics).min(area.$from.soil.organics);
-                        area.$from.soil.organics -= to_move;
-                        area.$to.soil.organics += to_move;
-                    }};
-                }
+        macro_rules! move_organic {
+            ($from: ident, $to: ident) => {{
+                let to_move = (255 - area.$to.soil.organics).min(area.$from.soil.organics);
+                area.$from.soil.organics -= to_move;
+                area.$to.soil.organics += to_move;
+            }};
+        }
 
-                match gene.action {
+        macro_rules! make_action {
+            ($action: ident) => {
+                match genome.active_gene().$action {
                     MoveOrganicUp => move_organic!(center, up),
                     MoveOrganicDown => move_organic!(center, down),
                     MoveOrganicLeft => move_organic!(center, left),
@@ -162,54 +153,79 @@ fn process_genome(area: &mut Area<WorldCell>, life: &mut AliveCell, mut genome: 
                     MoveOrganicFromLeft => move_organic!(left, center),
                     MoveOrganicFromRight => move_organic!(right, center),
 
-                    MoveOrganicUpFromDown => move_organic!(down, up),
-                    MoveOrganicUpFromLeft => move_organic!(left, up),
-                    MoveOrganicUpFromRight => move_organic!(right, up),
+                    DoNothing => {}
 
-                    MoveOrganicDownFromUp => move_organic!(up, down),
-                    MoveOrganicDownFromLeft => move_organic!(left, down),
-                    MoveOrganicDownFromRight => move_organic!(right, down),
-
-                    MoveOrganicLeftFromUp => move_organic!(up, left),
-                    MoveOrganicLeftFromDown => move_organic!(down, left),
-                    MoveOrganicLeftFromRight => move_organic!(right, left),
-
-                    MoveOrganicRightFromUp => move_organic!(up, right),
-                    MoveOrganicRightFromDown => move_organic!(down, right),
-                    MoveOrganicRightFromLeft => move_organic!(left, right),
+                    ChangeActiveGene(gene_location) => {
+                        genome.active_gene = gene_location;
+                        life.ty = Stem(genome);
+                    }
                 }
-            } else {
-                genome.active_gene = gene.alt_gene_action;
-                life.ty = Stem(genome);
+            };
+        }
+
+        {
+            let condition_1 = check_gene_condition(
+                area,
+                life,
+                genome.active_gene().main_action_condition1,
+                genome.active_gene().main_action_param1,
+            );
+
+            let condition_2 = check_gene_condition(
+                area,
+                life,
+                genome.active_gene().main_action_condition2,
+                genome.active_gene().main_action_param2,
+            );
+
+            match (condition_1, condition_2) {
+                (true, true) => make_action!(main_action1),
+                (true, false) => make_action!(main_action2),
+                (false, true) => make_action!(main_action3),
+                (false, false) => {}
             }
-        } else {
-            let condition_1 = check_gene_condition(area, life, gene.condition_1, gene.param_1);
-            let condition_2 = check_gene_condition(area, life, gene.condition_2, gene.param_2);
+        }
+
+        {
+            let condition_1 = check_gene_condition(
+                area,
+                life,
+                genome.active_gene().condition_1,
+                genome.active_gene().param_1,
+            );
+
+            let condition_2 = check_gene_condition(
+                area,
+                life,
+                genome.active_gene().condition_2,
+                genome.active_gene().param_2,
+            );
 
             match (condition_1, condition_2) {
                 (true, true) => {
-                    genome.active_gene = gene.alt_gene1;
+                    genome.active_gene = genome.active_gene().alt_gene1;
                     life.ty = Stem(genome);
                 }
                 (true, false) => {
-                    genome.active_gene = gene.alt_gene2;
+                    genome.active_gene = genome.active_gene().alt_gene2;
                     life.ty = Stem(genome);
                 }
                 (false, true) => {
-                    genome.active_gene = gene.alt_gene3;
+                    genome.active_gene = genome.active_gene().alt_gene3;
                     life.ty = Stem(genome);
                 }
                 (false, false) => {
-                    cell_op_directions_enum!(try_action);
+                    cell_op_directions_enum!(direction_action);
                 }
             };
         }
 
         // Update parent
         if birth_once {
-            life.energy -= total_energy;
             life.ty = Pipe;
         }
+
+        life.energy -= total_energy;
     }
 }
 
@@ -281,16 +297,19 @@ fn generate_energy(area: &mut Area<WorldCell>, life: &mut AliveCell) {
                         area.$dir.soil.organics -= organic;
 
                         total += organic as f32;
-
-                        area.$dir.air.pollution = area.$dir.air.pollution.saturating_add(organic);
                     };
                 };
             }
 
             all_directions!(process_organic);
 
-            life.energy += total * 0.4;
-            area.center.soil.energy += total * 0.5;
+            life.energy += total;
+            area.center.soil.energy += total * 0.2;
+            area.center.air.pollution = area
+                .center
+                .air
+                .pollution
+                .saturating_add((total * 0.5) as u8);
         }
         Reactor => {
             let mut total = 0.0;
@@ -355,18 +374,18 @@ fn reroute_energy_paths(area: &mut Area<WorldCell>, life: &mut AliveCell, parent
 
 /// Transfer energy
 fn transfer_energy(area: &mut Area<WorldCell>, life: &mut AliveCell) {
-    if !life.can_transfer() {
+    if !life.can_transfer() || life.energy_to.branches_amount() == 0 {
         return;
     }
 
     let flow_each = {
-        let to_flow = (life.energy * 0.5 - 2. * life.consumption()).max(0.);
+        let to_flow = if life.steps_to_death == 1 {
+            life.energy
+        } else {
+            (life.energy - 1.1 * life.consumption()).max(0.)
+        };
 
         life.energy -= to_flow;
-
-        if life.energy < life.consumption() {
-            return;
-        }
 
         to_flow / (life.energy_to.branches_amount() as f32)
     };

@@ -10,6 +10,7 @@ use crate::utils::get_map;
 use bevy::math::{uvec2, vec2, vec3};
 use bevy::prelude::*;
 use bevy_fast_tilemap::{FastTileMapPlugin, Map, MapBundleManaged};
+use rand::seq::SliceRandom;
 
 #[derive(Default)]
 pub struct WorldPlugin;
@@ -25,7 +26,7 @@ impl Plugin for WorldPlugin {
             .add_systems(Update, initialize.run_if(not_initialized))
             // Resources
             .insert_resource(Grid::<WorldCell>::default())
-            .insert_resource(Settings { w: 128, h: 128 })
+            .insert_resource(Settings { w: 256, h: 256 })
             .insert_resource(State::default());
     }
 }
@@ -123,13 +124,13 @@ fn initialize(
             let cell = world.get_mut(x as i64, y as i64);
             *cell = WorldCell::default();
 
-            if x % 2 == 0 && y % 2 == 0 {
+            if x % 4 == 0 && y % 4 == 0 {
                 let life_cell = AliveCell::new(
                     Stem(rand::random()),
-                    8.,
+                    20.,
                     EnergyDirections::default(),
                     None,
-                    16,
+                    2,
                 );
                 cell.life = LifeCell::Alive(life_cell);
             }
@@ -160,8 +161,16 @@ pub fn next_step(
     let mut soil_energy_map = get_map(&maps, &mut *map_materials, 3);
     let mut energy_directions_map = get_map(&maps, &mut *map_materials, 4);
 
-    for x in &state.cell_order_x {
-        for y in &state.cell_order_y {
+    let mut rng = rand::thread_rng();
+
+    let mut cell_order_x: Vec<u32> = (0..settings.w).collect();
+    cell_order_x.shuffle(&mut rng);
+
+    let mut cell_order_y: Vec<u32> = (0..settings.h).collect();
+    cell_order_y.shuffle(&mut rng);
+
+    for x in &cell_order_x {
+        for y in &cell_order_y {
             let mut area = Area::new(&mut *world, *x, *y);
             update_world(&mut area);
         }

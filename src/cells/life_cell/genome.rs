@@ -10,7 +10,7 @@ pub struct MutationRate(pub u8);
 
 impl Distribution<MutationRate> for Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> MutationRate {
-        MutationRate(rng.gen_range(5..100))
+        MutationRate(rng.gen_range(5..=100))
     }
 }
 
@@ -24,11 +24,11 @@ impl Distribution<GeneLocation> for Standard {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct LifeSpan(pub u8);
+pub struct LifeSpan(pub u16);
 
 impl Distribution<LifeSpan> for Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> LifeSpan {
-        LifeSpan(rng.gen())
+        LifeSpan(rng.gen_range(0..=1000))
     }
 }
 
@@ -40,7 +40,7 @@ pub struct Genome {
 }
 
 impl Genome {
-    pub const fn get_active_gene(&self) -> Gene {
+    pub const fn active_gene(&self) -> Gene {
         self.get_gene(self.active_gene)
     }
 
@@ -52,7 +52,7 @@ impl Genome {
         let mut rng = thread_rng();
 
         if rng.gen_ratio(self.mutation_rate.0 as u32, 100) {
-            match rng.gen_range(0..=2) {
+            match rng.gen_range(0..=10) {
                 0 => self.mutation_rate = rng.gen(),
                 1 => self.active_gene = rng.gen(),
                 _ => {
@@ -60,7 +60,7 @@ impl Genome {
                         if rng.gen_ratio(self.mutation_rate.0 as u32, 100) {
                             let gene = self.genes.get_mut(i as usize).unwrap();
 
-                            match rng.gen_range(0..=15) {
+                            match rng.gen_range(0..=18) {
                                 0 => gene.up = rng.gen(),
                                 1 => gene.down = rng.gen(),
                                 2 => gene.left = rng.gen(),
@@ -76,11 +76,15 @@ impl Genome {
                                 9 => gene.alt_gene2 = rng.gen(),
                                 10 => gene.alt_gene3 = rng.gen(),
 
-                                11 => gene.action_condition = rng.gen(),
-                                12 => gene.action_param = rng.gen(),
-                                13 => gene.action = rng.gen(),
+                                11 => gene.main_action_condition1 = rng.gen(),
+                                12 => gene.main_action_param1 = rng.gen(),
 
-                                14 => gene.alt_gene_action = rng.gen(),
+                                13 => gene.main_action_condition2 = rng.gen(),
+                                14 => gene.main_action_param2 = rng.gen(),
+
+                                15 => gene.main_action1 = rng.gen(),
+                                16 => gene.main_action2 = rng.gen(),
+                                17 => gene.main_action3 = rng.gen(),
 
                                 _ => *gene = rng.gen(),
                             }
@@ -109,9 +113,15 @@ pub struct Gene {
     pub left: GeneDirectionAction,
     pub right: GeneDirectionAction,
 
-    pub action_condition: Option<GeneCondition>,
-    pub action_param: u8,
-    pub action: GeneAction,
+    pub main_action_condition1: GeneCondition,
+    pub main_action_param1: u8,
+
+    pub main_action_condition2: GeneCondition,
+    pub main_action_param2: u8,
+
+    pub main_action1: GeneAction,
+    pub main_action2: GeneAction,
+    pub main_action3: GeneAction,
 
     pub condition_1: GeneCondition,
     pub param_1: u8,
@@ -122,7 +132,6 @@ pub struct Gene {
     pub alt_gene1: GeneLocation,
     pub alt_gene2: GeneLocation,
     pub alt_gene3: GeneLocation,
-    pub alt_gene_action: GeneLocation,
 }
 
 impl Gene {
@@ -142,9 +151,15 @@ impl Distribution<Gene> for Standard {
             left: rng.gen(),
             right: rng.gen(),
 
-            action_condition: rng.gen(),
-            action_param: rng.gen(),
-            action: rng.gen(),
+            main_action_condition1: rng.gen(),
+            main_action_param1: rng.gen(),
+
+            main_action_condition2: rng.gen(),
+            main_action_param2: rng.gen(),
+
+            main_action1: rng.gen(),
+            main_action2: rng.gen(),
+            main_action3: rng.gen(),
 
             condition_1: rng.gen(),
             param_1: rng.gen(),
@@ -155,8 +170,6 @@ impl Distribution<Gene> for Standard {
             alt_gene1: rng.gen(),
             alt_gene2: rng.gen(),
             alt_gene3: rng.gen(),
-
-            alt_gene_action: rng.gen(),
         }
     }
 }
@@ -174,16 +187,17 @@ pub enum GeneDirectionAction {
 }
 
 impl GeneDirectionAction {
-    pub const fn energy_capacity(&self) -> f32 {
+    pub fn energy_capacity(&self) -> f32 {
+        use GeneDirectionAction::*;
         match self {
-            GeneDirectionAction::MakeLeaf(_) => 1.,
-            GeneDirectionAction::MakeRoot(_) => 1.,
-            GeneDirectionAction::MakeReactor(_) => 1.4,
-            GeneDirectionAction::MultiplySelf(_, _) => 0.2,
-            GeneDirectionAction::CreateSeed(_) => 0.2,
-            GeneDirectionAction::Nothing => 0.,
-            GeneDirectionAction::KillCell => 0.,
-            GeneDirectionAction::MakeFilter(_) => 1.,
+            MakeLeaf(life_span) => 1.2 + (life_span.0 as f32 / 500.),
+            MakeRoot(life_span) => 0.4 + (life_span.0 as f32 / 500.),
+            MakeReactor(life_span) => 0.8 + (life_span.0 as f32 / 500.),
+            MultiplySelf(life_span, _) => 1.2 + (life_span.0 as f32 / 500.),
+            CreateSeed(life_span) => 1.2 + (life_span.0 as f32 / 500.),
+            MakeFilter(life_span) => 0.6 + (life_span.0 as f32 / 500.),
+            Nothing => 0.,
+            KillCell => 0.,
         }
     }
 }
@@ -304,27 +318,15 @@ pub enum GeneAction {
     MoveOrganicFromLeft,
     MoveOrganicFromRight,
 
-    MoveOrganicUpFromDown,
-    MoveOrganicUpFromLeft,
-    MoveOrganicUpFromRight,
+    DoNothing,
 
-    MoveOrganicDownFromUp,
-    MoveOrganicDownFromLeft,
-    MoveOrganicDownFromRight,
-
-    MoveOrganicLeftFromUp,
-    MoveOrganicLeftFromDown,
-    MoveOrganicLeftFromRight,
-
-    MoveOrganicRightFromUp,
-    MoveOrganicRightFromDown,
-    MoveOrganicRightFromLeft,
+    ChangeActiveGene(GeneLocation),
 }
 
 impl Distribution<GeneAction> for Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> GeneAction {
         use GeneAction::*;
-        match rng.gen_range(0..=19) {
+        match rng.gen_range(0..=9) {
             0 => MoveOrganicUp,
             1 => MoveOrganicDown,
             2 => MoveOrganicLeft,
@@ -335,21 +337,9 @@ impl Distribution<GeneAction> for Standard {
             6 => MoveOrganicFromLeft,
             7 => MoveOrganicFromRight,
 
-            8 => MoveOrganicUpFromDown,
-            9 => MoveOrganicUpFromLeft,
-            10 => MoveOrganicUpFromRight,
+            8 => DoNothing,
 
-            11 => MoveOrganicDownFromUp,
-            12 => MoveOrganicDownFromLeft,
-            13 => MoveOrganicDownFromRight,
-
-            14 => MoveOrganicLeftFromUp,
-            15 => MoveOrganicLeftFromDown,
-            16 => MoveOrganicLeftFromRight,
-
-            17 => MoveOrganicRightFromUp,
-            18 => MoveOrganicRightFromDown,
-            _ => MoveOrganicRightFromLeft,
+            _ => ChangeActiveGene(rng.gen()),
         }
     }
 }

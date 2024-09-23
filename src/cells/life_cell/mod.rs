@@ -99,7 +99,7 @@ pub struct AliveCell {
 
     pub parent_dir: Option<CellDir>,
 
-    pub steps_to_death: u8,
+    pub steps_to_death: u16,
 }
 
 impl AliveCell {
@@ -108,7 +108,7 @@ impl AliveCell {
         energy: f32,
         energy_to: EnergyDirections,
         parent_dir: Option<CellDir>,
-        steps_to_death: u8,
+        steps_to_death: u16,
     ) -> Self {
         Self {
             ty,
@@ -302,11 +302,11 @@ impl LifeType {
     pub const fn consumption(&self) -> f32 {
         match self {
             LifeType::Pipe => 0.1,
-            LifeType::Leaf => 0.5,
-            LifeType::Stem(_) => 0.1,
-            LifeType::Root => 0.5,
-            LifeType::Reactor => 0.7,
-            LifeType::Filter => 0.2,
+            LifeType::Leaf => 0.6,
+            LifeType::Stem(_) => 0.6,
+            LifeType::Root => 0.2,
+            LifeType::Reactor => 0.4,
+            LifeType::Filter => 0.3,
         }
     }
 
@@ -321,12 +321,7 @@ impl LifeType {
         }
     }
 
-    pub const fn make_newborn_cell(
-        self,
-        parent_dir: CellDir,
-        new_cell_energy: f32,
-        steps_to_death: u8,
-    ) -> LifeCell {
+    pub fn make_newborn_cell(self, parent_dir: CellDir, steps_to_death: u16) -> LifeCell {
         let new_cell_energy_directions = if self.is_energy_generator() {
             EnergyDirections::from_direction(&parent_dir)
         } else {
@@ -340,7 +335,7 @@ impl LifeType {
 
         LifeCell::Alive(AliveCell::new(
             self,
-            new_cell_energy,
+            2. * self.consumption(),
             new_cell_energy_directions,
             Some(parent_dir),
             steps_to_death,

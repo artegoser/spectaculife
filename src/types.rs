@@ -59,9 +59,6 @@ pub struct State {
     pub paused: bool,
     pub initialized: bool,
 
-    pub cell_order_x: Vec<u32>,
-    pub cell_order_y: Vec<u32>,
-
     pub organic_visible: bool,
     pub life_visible: bool,
     pub pollution_visible: bool,
@@ -69,21 +66,10 @@ pub struct State {
 
 impl State {
     pub fn from_settings(settings: &Settings) -> Self {
-        let mut rng = rand::thread_rng();
-
-        let mut cell_order_x: Vec<u32> = (0..settings.w).collect();
-        cell_order_x.shuffle(&mut rng);
-
-        let mut cell_order_y: Vec<u32> = (0..settings.h).collect();
-        cell_order_y.shuffle(&mut rng);
-
         State {
             initialized: false,
             paused: false,
             cursor_position: Coord::default(),
-
-            cell_order_x,
-            cell_order_y,
 
             organic_visible: true,
             life_visible: true,
@@ -98,9 +84,6 @@ impl Default for State {
             initialized: false,
             paused: false,
             cursor_position: Coord::default(),
-
-            cell_order_x: vec![],
-            cell_order_y: vec![],
 
             organic_visible: true,
             life_visible: true,

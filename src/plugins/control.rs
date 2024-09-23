@@ -23,7 +23,7 @@ impl Plugin for ControlPlugin {
                 keyboard_input,
                 mouse_controls_camera,
                 update_cursor_position,
-                next_step.run_if(input_pressed(KeyCode::KeyN)),
+                next_step.run_if(input_just_pressed(KeyCode::KeyN)),
             ),
         );
     }
