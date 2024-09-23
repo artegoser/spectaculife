@@ -6,7 +6,7 @@ use bevy_fast_tilemap::{Map, MapIndexer};
 
 use crate::{
     cells::{
-        life_cell::{EnergyDirections, LifeCell::*},
+        life_cell::{genome::LifeSpan, EnergyDirections, LifeCell::*},
         WorldCell,
     },
     grid::Area,

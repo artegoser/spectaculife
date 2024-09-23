@@ -60,7 +60,7 @@ impl Genome {
                         if rng.gen_ratio(self.mutation_rate.0 as u32, 100) {
                             let gene = self.genes.get_mut(i as usize).unwrap();
 
-                            match rng.gen_range(0..=18) {
+                            match rng.gen_range(0..=22) {
                                 0 => gene.up = rng.gen(),
                                 1 => gene.down = rng.gen(),
                                 2 => gene.left = rng.gen(),
@@ -76,15 +76,21 @@ impl Genome {
                                 9 => gene.alt_gene2 = rng.gen(),
                                 10 => gene.alt_gene3 = rng.gen(),
 
-                                11 => gene.main_action_condition1 = rng.gen(),
-                                12 => gene.main_action_param1 = rng.gen(),
+                                11 => gene.additional_action_condition1 = rng.gen(),
+                                12 => gene.additional_action_param1 = rng.gen(),
 
-                                13 => gene.main_action_condition2 = rng.gen(),
-                                14 => gene.main_action_param2 = rng.gen(),
+                                13 => gene.additional_action_condition2 = rng.gen(),
+                                14 => gene.additional_action_param2 = rng.gen(),
 
-                                15 => gene.main_action1 = rng.gen(),
-                                16 => gene.main_action2 = rng.gen(),
-                                17 => gene.main_action3 = rng.gen(),
+                                15 => gene.additional_action1 = rng.gen(),
+                                16 => gene.additional_action2 = rng.gen(),
+                                17 => gene.additional_action3 = rng.gen(),
+
+                                18 => gene.main_action = rng.gen(),
+                                19 => gene.main_action_param = rng.gen(),
+                                20 => gene.main_action_condition = rng.gen(),
+
+                                21 => gene.self_lifespan = rng.gen(),
 
                                 _ => *gene = rng.gen(),
                             }
@@ -113,15 +119,19 @@ pub struct Gene {
     pub left: GeneDirectionAction,
     pub right: GeneDirectionAction,
 
-    pub main_action_condition1: GeneCondition,
-    pub main_action_param1: u8,
+    pub main_action_condition: GeneCondition,
+    pub main_action_param: u8,
+    pub main_action: GeneAction,
 
-    pub main_action_condition2: GeneCondition,
-    pub main_action_param2: u8,
+    pub additional_action_condition1: GeneCondition,
+    pub additional_action_param1: u8,
 
-    pub main_action1: GeneAction,
-    pub main_action2: GeneAction,
-    pub main_action3: GeneAction,
+    pub additional_action_condition2: GeneCondition,
+    pub additional_action_param2: u8,
+
+    pub additional_action1: GeneAction,
+    pub additional_action2: GeneAction,
+    pub additional_action3: GeneAction,
 
     pub condition_1: GeneCondition,
     pub param_1: u8,
@@ -132,6 +142,8 @@ pub struct Gene {
     pub alt_gene1: GeneLocation,
     pub alt_gene2: GeneLocation,
     pub alt_gene3: GeneLocation,
+
+    pub self_lifespan: LifeSpan,
 }
 
 impl Gene {
@@ -151,15 +163,19 @@ impl Distribution<Gene> for Standard {
             left: rng.gen(),
             right: rng.gen(),
 
-            main_action_condition1: rng.gen(),
-            main_action_param1: rng.gen(),
+            main_action_condition: rng.gen(),
+            main_action_param: rng.gen(),
+            main_action: rng.gen(),
 
-            main_action_condition2: rng.gen(),
-            main_action_param2: rng.gen(),
+            additional_action_condition1: rng.gen(),
+            additional_action_param1: rng.gen(),
 
-            main_action1: rng.gen(),
-            main_action2: rng.gen(),
-            main_action3: rng.gen(),
+            additional_action_condition2: rng.gen(),
+            additional_action_param2: rng.gen(),
+
+            additional_action1: rng.gen(),
+            additional_action2: rng.gen(),
+            additional_action3: rng.gen(),
 
             condition_1: rng.gen(),
             param_1: rng.gen(),
@@ -170,6 +186,8 @@ impl Distribution<Gene> for Standard {
             alt_gene1: rng.gen(),
             alt_gene2: rng.gen(),
             alt_gene3: rng.gen(),
+
+            self_lifespan: rng.gen(),
         }
     }
 }
@@ -190,12 +208,12 @@ impl GeneDirectionAction {
     pub fn energy_capacity(&self) -> f32 {
         use GeneDirectionAction::*;
         match self {
-            MakeLeaf(life_span) => 1.2 + (life_span.0 as f32 / 500.),
-            MakeRoot(life_span) => 0.4 + (life_span.0 as f32 / 500.),
-            MakeReactor(life_span) => 0.8 + (life_span.0 as f32 / 500.),
-            MultiplySelf(life_span, _) => 1.2 + (life_span.0 as f32 / 500.),
-            CreateSeed(life_span) => 1.2 + (life_span.0 as f32 / 500.),
-            MakeFilter(life_span) => 0.6 + (life_span.0 as f32 / 500.),
+            MakeLeaf(_) => 1.2,
+            MakeRoot(_) => 0.4,
+            MakeReactor(_) => 0.8,
+            MultiplySelf(_, _) => 1.2,
+            CreateSeed(_) => 1.2,
+            MakeFilter(_) => 0.6,
             Nothing => 0.,
             KillCell => 0.,
         }
@@ -321,12 +339,17 @@ pub enum GeneAction {
     DoNothing,
 
     ChangeActiveGene(GeneLocation),
+
+    KillUpLeft,
+    KillUpRight,
+    KillDownLeft,
+    KillDownRight,
 }
 
 impl Distribution<GeneAction> for Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> GeneAction {
         use GeneAction::*;
-        match rng.gen_range(0..=9) {
+        match rng.gen_range(0..=13) {
             0 => MoveOrganicUp,
             1 => MoveOrganicDown,
             2 => MoveOrganicLeft,
@@ -339,7 +362,12 @@ impl Distribution<GeneAction> for Standard {
 
             8 => DoNothing,
 
-            _ => ChangeActiveGene(rng.gen()),
+            9 => ChangeActiveGene(rng.gen()),
+
+            10 => KillUpLeft,
+            11 => KillUpRight,
+            12 => KillDownLeft,
+            _ => KillDownRight,
         }
     }
 }
