@@ -303,7 +303,7 @@ impl LifeType {
         match self {
             LifeType::Pipe => 0.1,
             LifeType::Leaf => 0.6,
-            LifeType::Stem(_) => 0.6,
+            LifeType::Stem(_) => 0.1,
             LifeType::Root => 0.2,
             LifeType::Reactor => 0.4,
             LifeType::Filter => 0.3,

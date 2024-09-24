@@ -105,7 +105,7 @@ fn process_genome(
         macro_rules! kill_cell {
             ($dir:ident) => {
                 if let Alive(mut $dir) = area.$dir.life {
-                    life.energy += $dir.energy;
+                    life.energy += $dir.energy + 1.5 * $dir.consumption();
 
                     $dir.steps_to_death = 0;
                     $dir.energy = 0.;
@@ -173,6 +173,9 @@ fn process_genome(
                     KillUpRight => kill_cell!(up_right),
                     KillDownLeft => kill_cell!(down_left),
                     KillDownRight => kill_cell!(down_right),
+
+                    WaitStep => return,
+                    Die => return kill(area),
                 }
             };
         }
@@ -314,7 +317,6 @@ fn generate_energy(area: &mut Area<WorldCell>, life: &mut AliveCell) {
         Leaf => {
             let total = 1.8 / (area.center.air.pollution as f32 / 4.).max(1.);
             life.energy += total;
-            area.center.soil.energy += total * 0.25;
         }
         Root => {
             let mut total = 0.0;

@@ -62,7 +62,7 @@ impl Genome {
                         if rng.gen_ratio(self.mutation_rate.0 as u32, 100) {
                             let gene = self.genes.get_mut(i as usize).unwrap();
 
-                            match rng.gen_range(0..=22) {
+                            match rng.gen_range(0..=34) {
                                 0 => gene.up = rng.gen(),
                                 1 => gene.down = rng.gen(),
                                 2 => gene.left = rng.gen(),
@@ -93,6 +93,23 @@ impl Genome {
                                 20 => gene.main_action_condition = rng.gen(),
 
                                 21 => gene.self_lifespan = rng.gen(),
+
+                                22 => gene.up = gene.down,
+                                23 => gene.down = gene.up,
+                                24 => gene.left = gene.right,
+                                25 => gene.right = gene.left,
+
+                                26 => gene.up = gene.left,
+                                27 => gene.up = gene.right,
+
+                                28 => gene.down = gene.left,
+                                29 => gene.down = gene.right,
+
+                                30 => gene.left = gene.up,
+                                31 => gene.left = gene.down,
+
+                                32 => gene.right = gene.up,
+                                33 => gene.right = gene.down,
 
                                 _ => *gene = rng.gen(),
                             }
@@ -215,8 +232,8 @@ impl GeneDirectionAction {
             MakeLeaf(_) => 1.2,
             MakeRoot(_) => 0.4,
             MakeReactor(_) => 0.8,
-            MultiplySelf(_, _) => 1.2,
-            CreateSeed(_) => 1.2,
+            MultiplySelf(_, _) => 0.8,
+            CreateSeed(_) => 0.8,
             MakeFilter(_) => 0.6,
             Nothing => 0.,
             KillCell => 0.,
@@ -352,12 +369,15 @@ pub enum GeneAction {
     KillUpRight,
     KillDownLeft,
     KillDownRight,
+
+    WaitStep,
+    Die,
 }
 
 impl Distribution<GeneAction> for Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> GeneAction {
         use GeneAction::*;
-        match rng.gen_range(0..=13) {
+        match rng.gen_range(0..=15) {
             0 => MoveOrganicUp,
             1 => MoveOrganicDown,
             2 => MoveOrganicLeft,
@@ -375,7 +395,11 @@ impl Distribution<GeneAction> for Standard {
             10 => KillUpLeft,
             11 => KillUpRight,
             12 => KillDownLeft,
-            _ => KillDownRight,
+            13 => KillDownRight,
+
+            14 => WaitStep,
+
+            _ => Die,
         }
     }
 }

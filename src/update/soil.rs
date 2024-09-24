@@ -1,7 +1,4 @@
-use crate::{
-    cells::{soil_cell::MAX_ENERGY_LIFE, WorldCell},
-    grid::Area,
-};
+use crate::{cells::WorldCell, grid::Area};
 
 pub fn update_soil(area: &mut Area<WorldCell>) {
     let mut total: f32 = 0.;

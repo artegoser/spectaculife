@@ -26,7 +26,7 @@ impl Plugin for WorldPlugin {
             .add_systems(Update, initialize.run_if(not_initialized))
             // Resources
             .insert_resource(Grid::<WorldCell>::default())
-            .insert_resource(Settings { w: 128, h: 128 })
+            .insert_resource(Settings { w: 256, h: 256 })
             .insert_resource(State::default());
     }
 }
@@ -37,7 +37,6 @@ fn startup(
     mut materials: ResMut<Assets<Map>>,
     mut world: ResMut<Grid<WorldCell>>,
     settings: Res<Settings>,
-    state: ResMut<State>,
 ) {
     commands.spawn(Camera2dBundle::default());
 
@@ -126,7 +125,7 @@ fn initialize(
             if x % 4 == 0 && y % 4 == 0 {
                 let life_cell = AliveCell::new(
                     Stem(rand::random()),
-                    20.,
+                    100.,
                     EnergyDirections::default(),
                     None,
                     2,
