@@ -60,58 +60,60 @@ impl Genome {
                 _ => {
                     for i in 0..MAX_GENES {
                         if rng.gen_ratio(self.mutation_rate.0 as u32, 100) {
-                            let gene = self.genes.get_mut(i as usize).unwrap();
+                            for _ in 0..10 {
+                                let gene = self.genes.get_mut(i as usize).unwrap();
 
-                            match rng.gen_range(0..=34) {
-                                0 => gene.up = rng.gen(),
-                                1 => gene.down = rng.gen(),
-                                2 => gene.left = rng.gen(),
-                                3 => gene.right = rng.gen(),
+                                match rng.gen_range(0..=86) {
+                                    0..=7 => gene.up = rng.gen(),
+                                    8..=15 => gene.down = rng.gen(),
+                                    16..=23 => gene.left = rng.gen(),
+                                    24..=31 => gene.right = rng.gen(),
 
-                                4 => gene.condition_1 = rng.gen(),
-                                5 => gene.param_1 = rng.gen(),
+                                    32 => gene.condition_1 = rng.gen(),
+                                    33 => gene.param_1 = rng.gen(),
 
-                                6 => gene.condition_2 = rng.gen(),
-                                7 => gene.param_2 = rng.gen(),
+                                    34 => gene.condition_2 = rng.gen(),
+                                    35 => gene.param_2 = rng.gen(),
 
-                                8 => gene.alt_gene1 = rng.gen(),
-                                9 => gene.alt_gene2 = rng.gen(),
-                                10 => gene.alt_gene3 = rng.gen(),
+                                    36 => gene.alt_gene1 = rng.gen(),
+                                    37 => gene.alt_gene2 = rng.gen(),
+                                    38 => gene.alt_gene3 = rng.gen(),
 
-                                11 => gene.additional_action_condition1 = rng.gen(),
-                                12 => gene.additional_action_param1 = rng.gen(),
+                                    39 => gene.additional_action_condition1 = rng.gen(),
+                                    40 => gene.additional_action_param1 = rng.gen(),
 
-                                13 => gene.additional_action_condition2 = rng.gen(),
-                                14 => gene.additional_action_param2 = rng.gen(),
+                                    41 => gene.additional_action_condition2 = rng.gen(),
+                                    42 => gene.additional_action_param2 = rng.gen(),
 
-                                15 => gene.additional_action1 = rng.gen(),
-                                16 => gene.additional_action2 = rng.gen(),
-                                17 => gene.additional_action3 = rng.gen(),
+                                    43 => gene.additional_action1 = rng.gen(),
+                                    44 => gene.additional_action2 = rng.gen(),
+                                    45 => gene.additional_action3 = rng.gen(),
 
-                                18 => gene.main_action = rng.gen(),
-                                19 => gene.main_action_param = rng.gen(),
-                                20 => gene.main_action_condition = rng.gen(),
+                                    46 => gene.main_action = rng.gen(),
+                                    47 => gene.main_action_param = rng.gen(),
+                                    48 => gene.main_action_condition = rng.gen(),
 
-                                21 => gene.self_lifespan = rng.gen(),
+                                    49 => gene.self_lifespan = rng.gen(),
 
-                                22 => gene.up = gene.down,
-                                23 => gene.down = gene.up,
-                                24 => gene.left = gene.right,
-                                25 => gene.right = gene.left,
+                                    50..=52 => gene.up = gene.down,
+                                    53..=55 => gene.down = gene.up,
+                                    56..=58 => gene.left = gene.right,
+                                    59..=61 => gene.right = gene.left,
 
-                                26 => gene.up = gene.left,
-                                27 => gene.up = gene.right,
+                                    62..=64 => gene.up = gene.left,
+                                    65..=67 => gene.up = gene.right,
 
-                                28 => gene.down = gene.left,
-                                29 => gene.down = gene.right,
+                                    68..=70 => gene.down = gene.left,
+                                    71..=73 => gene.down = gene.right,
 
-                                30 => gene.left = gene.up,
-                                31 => gene.left = gene.down,
+                                    74..=76 => gene.left = gene.up,
+                                    77..=79 => gene.left = gene.down,
 
-                                32 => gene.right = gene.up,
-                                33 => gene.right = gene.down,
+                                    80..=82 => gene.right = gene.up,
+                                    83..=85 => gene.right = gene.down,
 
-                                _ => *gene = rng.gen(),
+                                    _ => *gene = rng.gen(),
+                                }
                             }
                         }
                     }

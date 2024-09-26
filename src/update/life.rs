@@ -5,14 +5,13 @@ use crate::{
     cells::{
         life_cell::{
             genome::{
-                Gene,
                 GeneAction::*,
                 GeneCondition::{self, *},
                 GeneDirectionAction::*,
-                GeneLocation, Genome,
+                Genome,
             },
-            AliveCell, EnergyDirections,
-            LifeCell::{self, *},
+            AliveCell,
+            LifeCell::*,
             LifeType::*,
         },
         soil_cell::{MAX_ENERGY_LIFE, MAX_ORGANIC_LIFE},
@@ -105,7 +104,7 @@ fn process_genome(
         macro_rules! kill_cell {
             ($dir:ident) => {
                 if let Alive(mut $dir) = area.$dir.life {
-                    life.energy += $dir.energy + 1.5 * $dir.consumption();
+                    life.energy += $dir.energy;
 
                     $dir.steps_to_death = 0;
                     $dir.energy = 0.;
