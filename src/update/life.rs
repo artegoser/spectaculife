@@ -107,7 +107,7 @@ fn process_genome(
                     life.energy += $dir.energy;
 
                     $dir.steps_to_death = 0;
-                    $dir.energy = 0.;
+                    $dir.energy = 0.0;
 
                     area.$dir.life = Alive($dir);
                 }
@@ -232,22 +232,13 @@ fn process_genome(
             );
 
             match (condition_1, condition_2) {
-                (true, true) => {
-                    genome.active_gene = genome.active_gene().alt_gene1;
-                    life.ty = Stem(genome);
-                }
-                (true, false) => {
-                    genome.active_gene = genome.active_gene().alt_gene2;
-                    life.ty = Stem(genome);
-                }
-                (false, true) => {
-                    genome.active_gene = genome.active_gene().alt_gene3;
-                    life.ty = Stem(genome);
-                }
-                (false, false) => {
-                    cell_op_directions_enum!(direction_action);
-                }
+                (true, true) => genome.active_gene = genome.active_gene().alt_gene1,
+                (true, false) => genome.active_gene = genome.active_gene().alt_gene2,
+                (false, true) => genome.active_gene = genome.active_gene().alt_gene3,
+                (false, false) => {}
             };
+
+            cell_op_directions_enum!(direction_action);
         }
 
         // Update parent
@@ -314,7 +305,7 @@ fn check_gene_condition(
 fn generate_energy(area: &mut Area<WorldCell>, life: &mut AliveCell) {
     match life.ty {
         Leaf => {
-            let total = 1.8 / (area.center.air.pollution as f32 / 4.).max(1.);
+            let total = 1.2 / (area.center.air.pollution as f32 / 4.).max(1.);
             life.energy += total;
         }
         Root => {

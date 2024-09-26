@@ -313,10 +313,10 @@ impl LifeType {
     pub const fn organics(&self) -> u8 {
         match self {
             LifeType::Pipe => 1,
-            LifeType::Leaf => 2,
+            LifeType::Leaf => 4,
             LifeType::Stem(_) => 2,
             LifeType::Root => 2,
-            LifeType::Reactor => 1,
+            LifeType::Reactor => 2,
             LifeType::Filter => 3,
         }
     }
