@@ -2,7 +2,7 @@ use bevy::{
     asset::{Assets, Handle},
     prelude::Query,
 };
-use bevy_fast_tilemap::{Map, MapIndexer};
+use bevy_fast_tilemap::prelude::*;
 
 use crate::{
     cells::{
@@ -20,7 +20,7 @@ pub fn get_map<'a>(
     maps: &Query<&Handle<Map>>,
     map_materials: *mut Assets<Map>,
     id: usize,
-) -> MapIndexer<'a> {
+) -> MapIndexerMut<'a> {
     let map_handle = maps.iter().nth(id).unwrap();
     let map_materials = unsafe { &mut *map_materials };
 

@@ -9,7 +9,7 @@ use crate::update::update_world;
 use crate::utils::get_map;
 use bevy::math::{uvec2, vec2, vec3};
 use bevy::prelude::*;
-use bevy_fast_tilemap::{FastTileMapPlugin, Map, MapBundleManaged};
+use bevy_fast_tilemap::prelude::*;
 use rand::seq::SliceRandom;
 
 #[derive(Default)]

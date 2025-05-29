@@ -6,7 +6,7 @@ use bevy::{
     math::{uvec2, vec3},
     prelude::*,
 };
-use bevy_fast_tilemap::Map;
+use bevy_fast_tilemap::prelude::*;
 
 use crate::types::State;
 

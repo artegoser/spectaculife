@@ -13,6 +13,7 @@ use crate::{
             AliveCell,
             LifeCell::*,
             LifeType::*,
+            MAX_ENERGY_TRANSFER,
         },
         soil_cell::{MAX_ENERGY_LIFE, MAX_ORGANIC_LIFE},
         WorldCell,
@@ -104,10 +105,9 @@ fn process_genome(
         macro_rules! kill_cell {
             ($dir:ident) => {
                 if let Alive(mut $dir) = area.$dir.life {
-                    life.energy += $dir.energy;
+                    life.energy += $dir.energy.min(MAX_ENERGY_TRANSFER);
 
                     $dir.steps_to_death = 0;
-                    $dir.energy = 0.0;
 
                     area.$dir.life = Alive($dir);
                 }
@@ -406,7 +406,9 @@ fn transfer_energy(area: &mut Area<WorldCell>, life: &mut AliveCell) {
         let to_flow = if life.steps_to_death == 1 {
             life.energy
         } else {
-            (life.energy - 1.1 * life.consumption()).max(0.)
+            (life.energy - 1.1 * life.consumption())
+                .min(MAX_ENERGY_TRANSFER)
+                .max(0.)
         };
 
         life.energy -= to_flow;

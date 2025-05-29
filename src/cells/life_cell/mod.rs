@@ -8,6 +8,8 @@ use crate::{
 
 use super::WorldCell;
 
+pub const MAX_ENERGY_TRANSFER: f32 = 1.;
+
 pub mod genome;
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
