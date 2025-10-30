@@ -6,7 +6,7 @@ use bevy_fast_tilemap::prelude::*;
 
 use crate::{
     cells::{
-        life_cell::{genome::LifeSpan, EnergyDirections, LifeCell::*},
+        life_cell::{genome::LifeSpan, LifeCell::*},
         WorldCell,
     },
     grid::Area,
@@ -29,37 +29,6 @@ pub fn get_map<'a>(
     };
 
     map.indexer_mut()
-}
-
-pub const fn merge_energy(
-    area: &Area<WorldCell>,
-    mut directions: EnergyDirections,
-) -> EnergyDirections {
-    if let Alive(life) = area.up.life {
-        if life.energy_to.down {
-            directions.up = true
-        }
-    }
-
-    if let Alive(life) = area.down.life {
-        if life.energy_to.up {
-            directions.down = true
-        }
-    }
-
-    if let Alive(life) = area.left.life {
-        if life.energy_to.right {
-            directions.left = true
-        }
-    }
-
-    if let Alive(life) = area.right.life {
-        if life.energy_to.left {
-            directions.right = true
-        }
-    }
-
-    directions
 }
 
 #[macro_export]

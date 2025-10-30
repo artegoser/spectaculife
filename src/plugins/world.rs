@@ -124,11 +124,13 @@ fn initialize(
 
             if x % 4 == 0 && y % 4 == 0 {
                 let life_cell = AliveCell::new(
-                    Stem(rand::random()),
+                    Stem {
+                        genome: rand::random(),
+                        energy: 256.,
+                    },
                     100.,
                     EnergyDirections::default(),
                     None,
-                    2,
                 );
                 cell.life = LifeCell::Alive(life_cell);
             }

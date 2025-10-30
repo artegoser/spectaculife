@@ -63,54 +63,32 @@ impl Genome {
                             for _ in 0..10 {
                                 let gene = self.genes.get_mut(i as usize).unwrap();
 
-                                match rng.gen_range(0..=86) {
-                                    0..=7 => gene.up = rng.gen(),
-                                    8..=15 => gene.down = rng.gen(),
-                                    16..=23 => gene.left = rng.gen(),
-                                    24..=31 => gene.right = rng.gen(),
+                                match rng.gen_range(0..=18) {
+                                    0 => gene.condition_1 = rng.gen(),
+                                    1 => gene.param_1 = rng.gen(),
 
-                                    32 => gene.condition_1 = rng.gen(),
-                                    33 => gene.param_1 = rng.gen(),
+                                    2 => gene.condition_2 = rng.gen(),
+                                    3 => gene.param_2 = rng.gen(),
 
-                                    34 => gene.condition_2 = rng.gen(),
-                                    35 => gene.param_2 = rng.gen(),
+                                    4 => gene.alt_gene1 = rng.gen(),
+                                    5 => gene.alt_gene2 = rng.gen(),
+                                    6 => gene.alt_gene3 = rng.gen(),
 
-                                    36 => gene.alt_gene1 = rng.gen(),
-                                    37 => gene.alt_gene2 = rng.gen(),
-                                    38 => gene.alt_gene3 = rng.gen(),
+                                    7 => gene.additional_action_condition1 = rng.gen(),
+                                    8 => gene.additional_action_param1 = rng.gen(),
 
-                                    39 => gene.additional_action_condition1 = rng.gen(),
-                                    40 => gene.additional_action_param1 = rng.gen(),
+                                    9 => gene.additional_action_condition2 = rng.gen(),
+                                    10 => gene.additional_action_param2 = rng.gen(),
 
-                                    41 => gene.additional_action_condition2 = rng.gen(),
-                                    42 => gene.additional_action_param2 = rng.gen(),
+                                    11 => gene.additional_action1 = rng.gen(),
+                                    12 => gene.additional_action2 = rng.gen(),
+                                    13 => gene.additional_action3 = rng.gen(),
 
-                                    43 => gene.additional_action1 = rng.gen(),
-                                    44 => gene.additional_action2 = rng.gen(),
-                                    45 => gene.additional_action3 = rng.gen(),
+                                    14 => gene.main_action = rng.gen(),
+                                    15 => gene.main_action_param = rng.gen(),
+                                    16 => gene.main_action_condition = rng.gen(),
 
-                                    46 => gene.main_action = rng.gen(),
-                                    47 => gene.main_action_param = rng.gen(),
-                                    48 => gene.main_action_condition = rng.gen(),
-
-                                    49 => gene.self_lifespan = rng.gen(),
-
-                                    50..=52 => gene.up = gene.down,
-                                    53..=55 => gene.down = gene.up,
-                                    56..=58 => gene.left = gene.right,
-                                    59..=61 => gene.right = gene.left,
-
-                                    62..=64 => gene.up = gene.left,
-                                    65..=67 => gene.up = gene.right,
-
-                                    68..=70 => gene.down = gene.left,
-                                    71..=73 => gene.down = gene.right,
-
-                                    74..=76 => gene.left = gene.up,
-                                    77..=79 => gene.left = gene.down,
-
-                                    80..=82 => gene.right = gene.up,
-                                    83..=85 => gene.right = gene.down,
+                                    17 => gene.self_lifespan = rng.gen(),
 
                                     _ => *gene = rng.gen(),
                                 }
@@ -137,11 +115,6 @@ impl Distribution<Genome> for Standard {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Gene {
-    pub up: GeneDirectionAction,
-    pub down: GeneDirectionAction,
-    pub left: GeneDirectionAction,
-    pub right: GeneDirectionAction,
-
     pub main_action_condition: GeneCondition,
     pub main_action_param: u8,
     pub main_action: GeneAction,
@@ -169,23 +142,9 @@ pub struct Gene {
     pub self_lifespan: LifeSpan,
 }
 
-impl Gene {
-    pub fn energy_capacity(&self) -> f32 {
-        self.up.energy_capacity()
-            + self.down.energy_capacity()
-            + self.left.energy_capacity()
-            + self.right.energy_capacity()
-    }
-}
-
 impl Distribution<Gene> for Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Gene {
         Gene {
-            up: rng.gen(),
-            down: rng.gen(),
-            left: rng.gen(),
-            right: rng.gen(),
-
             main_action_condition: rng.gen(),
             main_action_param: rng.gen(),
             main_action: rng.gen(),
@@ -211,50 +170,6 @@ impl Distribution<Gene> for Standard {
             alt_gene3: rng.gen(),
 
             self_lifespan: rng.gen(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum GeneDirectionAction {
-    MakeLeaf(LifeSpan),
-    MakeRoot(LifeSpan),
-    MakeReactor(LifeSpan),
-    MakeFilter(LifeSpan),
-    MultiplySelf(LifeSpan, GeneLocation),
-    KillCell,
-    CreateSeed(LifeSpan),
-    Nothing,
-}
-
-impl GeneDirectionAction {
-    pub fn energy_capacity(&self) -> f32 {
-        use GeneDirectionAction::*;
-        match self {
-            MakeLeaf(_) => 1.2,
-            MakeRoot(_) => 0.4,
-            MakeReactor(_) => 0.8,
-            MultiplySelf(_, _) => 0.8,
-            CreateSeed(_) => 0.8,
-            MakeFilter(_) => 0.6,
-            Nothing => 0.,
-            KillCell => 0.,
-        }
-    }
-}
-
-impl Distribution<GeneDirectionAction> for Standard {
-    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> GeneDirectionAction {
-        match rng.gen_range(0..=9) {
-            0 => GeneDirectionAction::MultiplySelf(rng.gen(), rng.gen()),
-            1 => GeneDirectionAction::MakeLeaf(rng.gen()),
-            2 => GeneDirectionAction::MakeRoot(rng.gen()),
-            3 => GeneDirectionAction::MakeReactor(rng.gen()),
-            4 => GeneDirectionAction::MakeFilter(rng.gen()),
-            5..=7 => GeneDirectionAction::KillCell,
-            8 => GeneDirectionAction::CreateSeed(rng.gen()),
-
-            _ => GeneDirectionAction::Nothing,
         }
     }
 }
@@ -299,14 +214,12 @@ pub enum GeneCondition {
 
     Always,
     Never,
-
-    StepsDividesP,
 }
 
 impl Distribution<GeneCondition> for Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> GeneCondition {
         use GeneCondition::*;
-        match rng.gen_range(0..=31) {
+        match rng.gen_range(0..=30) {
             0 => LifeUp,
             1 => LifeDown,
             2 => LifeLeft,
@@ -344,9 +257,7 @@ impl Distribution<GeneCondition> for Standard {
             28 => AirPollutionRightMT,
 
             29 => Always,
-            30 => Never,
-
-            _ => StepsDividesP,
+            _ => Never,
         }
     }
 }
