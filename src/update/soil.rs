@@ -13,7 +13,7 @@ pub fn update_soil(area: &mut Area<WorldCell>) {
     total += area.down.soil.energy;
     total += area.down_right.soil.energy;
 
-    let foreach = total / 9.;
+    let foreach = total / 9.1;
 
     area.up_left.soil.energy = foreach;
     area.up.soil.energy = foreach;
