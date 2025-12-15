@@ -159,6 +159,19 @@ pub fn next_step(
     let mut soil_energy_map = get_map(&maps, &mut *map_materials, 3);
     let mut energy_directions_map = get_map(&maps, &mut *map_materials, 4);
 
+    for x in 0..settings.w {
+        for y in 0..settings.h {
+            let mut area = Area::new(&mut *world, x, y);
+            if let LifeCell::Alive(mut life) = area.center.life {
+                if life.incoming_energy != 0.0 {
+                    life.energy += life.incoming_energy;
+                    life.incoming_energy = 0.0;
+                    area.center.life = LifeCell::Alive(life);
+                }
+            }
+        }
+    }
+
     let mut rng = rand::thread_rng();
 
     let mut cell_order_x: Vec<u32> = (0..settings.w).collect();
