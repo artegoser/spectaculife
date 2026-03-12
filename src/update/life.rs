@@ -8,7 +8,7 @@ use crate::{
                 GeneAction::*,
                 GeneCondition::{self, *},
                 GeneDirectionAction::*,
-                Genome,
+                GenomeHandle, GenomePool,
             },
             AliveCell,
             LifeCell::*,
@@ -25,10 +25,10 @@ use crate::{
     },
 };
 
-pub fn update_life(state: &mut State, area: &mut Area<WorldCell>) {
+pub fn update_life(state: &mut State, area: &mut Area<WorldCell>, genomes: &mut GenomePool) {
     if let Alive(mut life) = area.center.life {
         if life.steps_to_death == 0 {
-            return kill(area);
+            return kill(area, genomes);
         } else {
             life.steps_to_death -= 1;
         }
@@ -36,13 +36,13 @@ pub fn update_life(state: &mut State, area: &mut Area<WorldCell>) {
         if ((area.center.soil.organics > MAX_ORGANIC_LIFE) && (life.ty != Root))
             || ((area.center.soil.energy > MAX_ENERGY_LIFE) && (life.ty != Reactor))
         {
-            return kill(area);
+            return kill(area, genomes);
         }
 
         life.energy -= life.consumption();
 
         if life.energy < 0. {
-            return kill(area);
+            return kill(area, genomes);
         }
 
         if (life.energy_to.branches_amount() == 0) && !life.is_fertile() {
@@ -50,10 +50,10 @@ pub fn update_life(state: &mut State, area: &mut Area<WorldCell>) {
                 if let Some(parent_dir) = life.parent_dir {
                     reroute_energy_paths(area, &mut life, parent_dir);
                 } else {
-                    return kill(area);
+                    return kill(area, genomes);
                 }
             } else {
-                return kill(area);
+                return kill(area, genomes);
             }
         }
 
@@ -64,8 +64,8 @@ pub fn update_life(state: &mut State, area: &mut Area<WorldCell>) {
 
         // Process genome
         match life.ty {
-            Stem(genome) => {
-                process_genome(state, area, &mut life, genome);
+            Stem(handle) => {
+                process_genome(state, area, &mut life, handle, genomes);
             }
             _ => {}
         };
@@ -78,14 +78,15 @@ fn process_genome(
     state: &State,
     area: &mut Area<WorldCell>,
     life: &mut AliveCell,
-    mut genome: Genome,
+    handle: GenomeHandle,
+    genomes: &mut GenomePool,
 ) {
-    let gene_snapshot = genome.active_gene();
+    let gene_snapshot = genomes.get(handle).active_gene();
     let total_energy = gene_snapshot.energy_capacity();
 
     if life.energy > total_energy {
         let mut birth_once = false;
-        let mut next_active_gene = genome.active_gene;
+        let mut next_active_gene = genomes.get(handle).active_gene;
 
         macro_rules! try_birth {
             ($dir: ident, $op_dir: ident, $cell_type: expr, $steps_to_death: expr) => {{
@@ -124,18 +125,32 @@ fn process_genome(
                     MakeReactor(lifespan) => try_birth!($dir, $op_dir, Reactor, lifespan.0),
                     MakeFilter(lifespan) => try_birth!($dir, $op_dir, Filter, lifespan.0),
                     MultiplySelf(lifespan, next_gene) => {
-                        let mut child_genome = genome;
-                        child_genome.mutate();
-                        child_genome.active_gene = next_gene;
-
-                        try_birth!($dir, $op_dir, Stem(child_genome), lifespan.0);
+                        if area.$dir.life.is_alive() {
+                            if let Alive(mut d) = area.$dir.life {
+                                d.steps_to_death = d.steps_to_death.saturating_sub(250);
+                                area.$dir.life = Alive(d);
+                            }
+                        } else {
+                            let mut child_genome = *genomes.get(handle);
+                            child_genome.mutate();
+                            child_genome.active_gene = next_gene;
+                            let child_handle = genomes.alloc(child_genome);
+                            try_birth!($dir, $op_dir, Stem(child_handle), lifespan.0);
+                        }
                     }
                     CreateSeed(lifespan) => {
-                        let mut child_genome = genome;
-                        child_genome.mutate();
-                        child_genome.active_gene = child_genome.seed_gene;
-
-                        try_birth!($dir, $op_dir, Stem(child_genome), lifespan.0);
+                        if area.$dir.life.is_alive() {
+                            if let Alive(mut d) = area.$dir.life {
+                                d.steps_to_death = d.steps_to_death.saturating_sub(250);
+                                area.$dir.life = Alive(d);
+                            }
+                        } else {
+                            let mut child_genome = *genomes.get(handle);
+                            child_genome.mutate();
+                            child_genome.active_gene = child_genome.seed_gene;
+                            let child_handle = genomes.alloc(child_genome);
+                            try_birth!($dir, $op_dir, Stem(child_handle), lifespan.0);
+                        }
                     }
                     KillCell => kill_cell!($dir),
 
@@ -175,7 +190,7 @@ fn process_genome(
                     KillDownRight => kill_cell!(down_right),
 
                     WaitStep => return,
-                    Die => return kill(area),
+                    Die => return kill(area, genomes),
                 }
             };
         }
@@ -243,15 +258,14 @@ fn process_genome(
         }
 
         // Apply gene switch for parent after all directional actions
-        genome.active_gene = next_active_gene;
-        if let Stem(_) = life.ty {
-            life.ty = Stem(genome);
-        }
+        genomes.get_mut(handle).active_gene = next_active_gene;
 
         // Update parent
         if birth_once {
+            let lifespan = genomes.get(handle).active_gene().self_lifespan.0;
+            genomes.free(handle);
             life.ty = Pipe;
-            life.steps_to_death = genome.active_gene().self_lifespan.0;
+            life.steps_to_death = lifespan;
         }
 
         life.energy -= total_energy;
@@ -446,7 +460,14 @@ fn transfer_energy(area: &mut Area<WorldCell>, life: &mut AliveCell) {
 }
 
 /// Kill cell and reroute energy paths
-fn kill(area: &mut Area<WorldCell>) {
+fn kill(area: &mut Area<WorldCell>, genomes: &mut GenomePool) {
+    // Free genome if this was a Stem cell
+    if let Alive(life) = area.center.life {
+        if let Stem(handle) = life.ty {
+            genomes.free(handle);
+        }
+    }
+
     area.center.soil.organics = area
         .center
         .soil

@@ -5,6 +5,47 @@ use rand::{
 
 pub const MAX_GENES: u8 = 32;
 
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct GenomeHandle(pub u32);
+
+#[derive(Debug, Clone)]
+pub struct GenomePool {
+    genomes: Vec<Genome>,
+    free_list: Vec<u32>,
+}
+
+impl GenomePool {
+    pub fn new() -> Self {
+        Self {
+            genomes: Vec::new(),
+            free_list: Vec::new(),
+        }
+    }
+
+    pub fn alloc(&mut self, genome: Genome) -> GenomeHandle {
+        if let Some(idx) = self.free_list.pop() {
+            self.genomes[idx as usize] = genome;
+            GenomeHandle(idx)
+        } else {
+            let idx = self.genomes.len() as u32;
+            self.genomes.push(genome);
+            GenomeHandle(idx)
+        }
+    }
+
+    pub fn free(&mut self, handle: GenomeHandle) {
+        self.free_list.push(handle.0);
+    }
+
+    pub fn get(&self, handle: GenomeHandle) -> &Genome {
+        &self.genomes[handle.0 as usize]
+    }
+
+    pub fn get_mut(&mut self, handle: GenomeHandle) -> &mut Genome {
+        &mut self.genomes[handle.0 as usize]
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MutationRate(pub u8);
 

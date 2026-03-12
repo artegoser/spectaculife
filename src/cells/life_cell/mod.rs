@@ -1,4 +1,4 @@
-use genome::Genome;
+use genome::GenomeHandle;
 
 use crate::{
     grid::Area,
@@ -267,7 +267,7 @@ pub enum LifeType {
     Reactor,
     Filter,
 
-    Stem(Genome),
+    Stem(GenomeHandle),
 }
 
 impl LifeType {

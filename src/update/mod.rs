@@ -1,4 +1,4 @@
-use crate::{cells::WorldCell, grid::Area, types::State};
+use crate::{cells::WorldCell, cells::life_cell::genome::GenomePool, grid::Area, types::State};
 
 mod air;
 mod life;
@@ -8,8 +8,8 @@ use air::*;
 use life::*;
 use soil::*;
 
-pub fn update_world(state: &mut State, area: &mut Area<WorldCell>) {
+pub fn update_world(state: &mut State, area: &mut Area<WorldCell>, genomes: &mut GenomePool) {
     update_soil(area);
     update_air(area);
-    update_life(state, area);
+    update_life(state, area, genomes);
 }

@@ -6,7 +6,7 @@ use bevy_fast_tilemap::prelude::*;
 
 use crate::{
     cells::{
-        life_cell::{genome::LifeSpan, EnergyDirections, LifeCell::*},
+        life_cell::{EnergyDirections, LifeCell::*},
         WorldCell,
     },
     grid::Area,

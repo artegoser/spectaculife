@@ -7,48 +7,47 @@ use crate::{
 
 #[derive(Debug, Clone, Resource, Default)]
 pub struct Grid<T> {
-    grid: Vec<Vec<T>>,
-    width: u32,
-    height: u32,
+    data: Vec<T>,
+    pub width: u32,
+    pub height: u32,
 }
 
 impl<T: std::default::Default + std::clone::Clone> Grid<T> {
     pub fn new(width: u32, height: u32) -> Self {
-        let grid: Vec<Vec<T>> = vec![vec![T::default(); width as usize]; height as usize];
-
         Self {
-            grid,
+            data: vec![T::default(); (width as usize) * (height as usize)],
             width,
             height,
         }
     }
 
+    #[inline(always)]
+    fn idx(&self, x: u32, y: u32) -> usize {
+        y as usize * self.width as usize + x as usize
+    }
+
     pub fn get<'a>(&'a self, x: i64, y: i64) -> &'a T {
-        self.grid
-            .get(get_continual_coord(y, self.height) as usize)
-            .unwrap()
-            .get(get_continual_coord(x, self.width) as usize)
-            .unwrap()
+        let wx = get_continual_coord(x, self.width);
+        let wy = get_continual_coord(y, self.height);
+        let i = self.idx(wx, wy);
+        &self.data[i]
     }
 
     pub fn uget<'a>(&'a self, x: u32, y: u32) -> &'a T {
-        self.grid.get(y as usize).unwrap().get(x as usize).unwrap()
+        let i = self.idx(x, y);
+        &self.data[i]
     }
 
     pub fn get_mut<'a>(&'a mut self, x: i64, y: i64) -> &'a mut T {
-        self.grid
-            .get_mut(get_continual_coord(y, self.height) as usize)
-            .unwrap()
-            .get_mut(get_continual_coord(x, self.width) as usize)
-            .unwrap()
+        let wx = get_continual_coord(x, self.width);
+        let wy = get_continual_coord(y, self.height);
+        let i = self.idx(wx, wy);
+        &mut self.data[i]
     }
 
     fn uget_mut<'a>(&'a mut self, x: u32, y: u32) -> &'a mut T {
-        self.grid
-            .get_mut(y as usize)
-            .unwrap()
-            .get_mut(x as usize)
-            .unwrap()
+        let i = self.idx(x, y);
+        &mut self.data[i]
     }
 
     pub fn set(&mut self, x: i64, y: i64, item: T) {

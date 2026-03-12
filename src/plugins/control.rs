@@ -1,6 +1,5 @@
 use bevy::{
     input::{
-        common_conditions::{input_just_pressed, input_pressed},
         mouse::{MouseMotion, MouseWheel},
     },
     math::{uvec2, vec3},
@@ -10,7 +9,7 @@ use bevy_fast_tilemap::prelude::*;
 
 use crate::types::State;
 
-use super::world::next_step;
+use super::world::SimulationWorker;
 
 #[derive(Default)]
 pub struct ControlPlugin;
@@ -23,7 +22,6 @@ impl Plugin for ControlPlugin {
                 keyboard_input,
                 mouse_controls_camera,
                 update_cursor_position,
-                next_step.run_if(input_just_pressed(KeyCode::KeyN)),
             ),
         );
     }
@@ -33,13 +31,24 @@ fn keyboard_input(
     keys: Res<ButtonInput<KeyCode>>,
     mut state: ResMut<State>,
     mut maps: Query<(&Handle<Map>, &mut Visibility)>,
+    sim: Option<Res<SimulationWorker>>,
 ) {
     if keys.just_pressed(KeyCode::Space) {
         state.paused = !state.paused;
+        if let Some(sim) = &sim {
+            sim.set_paused(state.paused);
+        }
+    }
+
+    if keys.just_pressed(KeyCode::KeyN) {
+        if let Some(sim) = &sim {
+            sim.request_step();
+        }
     }
 
     if keys.just_pressed(KeyCode::KeyI) {
         state.initialized = false;
+        // Re-initialization will be handled by a dedicated system if needed
     }
 
     if keys.just_pressed(KeyCode::KeyO) {
