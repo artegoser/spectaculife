@@ -1,8 +1,6 @@
 use crate::{cells::WorldCell, grid::Grid};
 
-const SOIL_DIFFUSION: f32 = 0.18;
-
-pub fn update_soil(grid: &mut Grid<WorldCell>, next: &mut [f32]) {
+pub fn update_soil(grid: &mut Grid<WorldCell>, next: &mut [f32], diffusion: f32) {
     let width = grid.width;
     let height = grid.height;
 
@@ -23,7 +21,7 @@ pub fn update_soil(grid: &mut Grid<WorldCell>, next: &mut [f32]) {
             ) / 8.0;
 
             let idx = y as usize * width as usize + x as usize;
-            next[idx] = center + (neighbor_avg - center) * SOIL_DIFFUSION;
+            next[idx] = center + (neighbor_avg - center) * diffusion;
         }
     }
 

@@ -1,0 +1,169 @@
+// Spectaculife simulation tuning.
+//
+// All `weight` values are relative weights, NOT percentages. They do not need
+// to add up to 100. Example: weights 6, 2, 2 mean 60%, 20%, 20%.
+// Adding/rebalancing an entry never requires recalculating numeric ranges.
+(
+    world: (
+        width: 512,
+        height: 512,
+        organism_spacing: 16,
+
+        initial_organics: (min: 0, max: 12),
+
+        // Kept deliberately dark/low. The previous fix used 0..24, which made
+        // almost the entire soil-energy layer visually bright.
+        initial_soil_energy: (min: 0.0, max: 3.0),
+        initial_pollution: (min: 0, max: 12),
+
+        initial_stem_energy: 100.0,
+        initial_stem_lifespan: 2,
+        collision_damage: 250,
+    ),
+
+    environment: (
+        soil_diffusion: 0.18,
+        air_diffusion: 0.22,
+        soil_energy_render_max: 32.0,
+    ),
+
+    genetics: (
+        lifespan: (min: 50, max: 1000),
+        initial_mutation_rate: (min: 1, max: 12),
+        mutation_rate_min: 1,
+        mutation_rate_max: 25,
+
+        second_mutation_edit_chance_percent: 5,
+        mutation_rate_evolution_chance_percent: 10,
+        mutation_rate_increase_weight: 1,
+        mutation_rate_decrease_weight: 1,
+
+        // Which gene is edited when a mutation targets a gene.
+        mutation_gene_targets: [
+            (kind: SeedGene, weight: 1),
+            (kind: ActiveGene, weight: 1),
+            (kind: RandomGene, weight: 2),
+        ],
+
+        // Initial/random direction actions. Current total weight = 16.
+        // MultiplySelf weight 6 => 37.5% per direction => 1.5 continuing
+        // Stem children per random gene on average.
+        direction_actions: [
+            (kind: MultiplySelf, weight: 6),
+            (kind: MakeLeaf, weight: 1),
+            (kind: MakeRoot, weight: 1),
+            (kind: MakeReactor, weight: 1),
+            (kind: MakeFilter, weight: 1),
+            (kind: CreateSeed, weight: 1),
+            (kind: Nothing, weight: 4),
+            (kind: KillCell, weight: 1),
+        ],
+
+        // Conditions used by randomly generated genes and condition mutations.
+        conditions: [
+            (kind: LifeUp, weight: 1),
+            (kind: LifeDown, weight: 1),
+            (kind: LifeLeft, weight: 1),
+            (kind: LifeRight, weight: 1),
+
+            (kind: LethalOrganicUp, weight: 1),
+            (kind: LethalOrganicDown, weight: 1),
+            (kind: LethalOrganicLeft, weight: 1),
+            (kind: LethalOrganicRight, weight: 1),
+
+            (kind: LethalEnergyUp, weight: 1),
+            (kind: LethalEnergyDown, weight: 1),
+            (kind: LethalEnergyLeft, weight: 1),
+            (kind: LethalEnergyRight, weight: 1),
+
+            (kind: RandomMT, weight: 1),
+            (kind: LifeEnergyMT, weight: 1),
+
+            (kind: OrganicCenterMT, weight: 1),
+            (kind: OrganicUpMT, weight: 1),
+            (kind: OrganicDownMT, weight: 1),
+            (kind: OrganicLeftMT, weight: 1),
+            (kind: OrganicRightMT, weight: 1),
+
+            (kind: SoilEnergyCenterMT, weight: 1),
+            (kind: SoilEnergyUpMT, weight: 1),
+            (kind: SoilEnergyDownMT, weight: 1),
+            (kind: SoilEnergyLeftMT, weight: 1),
+            (kind: SoilEnergyRightMT, weight: 1),
+
+            (kind: AirPollutionCenterMT, weight: 1),
+            (kind: AirPollutionUpMT, weight: 1),
+            (kind: AirPollutionDownMT, weight: 1),
+            (kind: AirPollutionLeftMT, weight: 1),
+            (kind: AirPollutionRightMT, weight: 1),
+
+            (kind: Always, weight: 1),
+            (kind: Never, weight: 1),
+            (kind: StepsDividesP, weight: 1),
+        ],
+
+        gene_actions: [
+            (kind: MoveOrganicUp, weight: 1),
+            (kind: MoveOrganicDown, weight: 1),
+            (kind: MoveOrganicLeft, weight: 1),
+            (kind: MoveOrganicRight, weight: 1),
+
+            (kind: MoveOrganicFromUp, weight: 1),
+            (kind: MoveOrganicFromDown, weight: 1),
+            (kind: MoveOrganicFromLeft, weight: 1),
+            (kind: MoveOrganicFromRight, weight: 1),
+
+            (kind: DoNothing, weight: 1),
+            (kind: ChangeActiveGene, weight: 1),
+
+            (kind: KillUpLeft, weight: 1),
+            (kind: KillUpRight, weight: 1),
+            (kind: KillDownLeft, weight: 1),
+            (kind: KillDownRight, weight: 1),
+
+            (kind: WaitStep, weight: 1),
+            (kind: Die, weight: 1),
+        ],
+
+        // Relative probability of each mutation edit. No numeric match ranges.
+        mutation_edits: [
+            (kind: DirectionUp, weight: 1),
+            (kind: DirectionDown, weight: 1),
+            (kind: DirectionLeft, weight: 1),
+            (kind: DirectionRight, weight: 1),
+
+            (kind: Condition1, weight: 1),
+            (kind: Condition1Param, weight: 1),
+            (kind: Condition2, weight: 1),
+            (kind: Condition2Param, weight: 1),
+
+            (kind: AltGene1, weight: 1),
+            (kind: AltGene2, weight: 1),
+            (kind: AltGene3, weight: 1),
+
+            (kind: AdditionalCondition1, weight: 1),
+            (kind: AdditionalCondition1Param, weight: 1),
+            (kind: AdditionalCondition2, weight: 1),
+            (kind: AdditionalCondition2Param, weight: 1),
+
+            (kind: AdditionalAction1, weight: 1),
+            (kind: AdditionalAction2, weight: 1),
+            (kind: AdditionalAction3, weight: 1),
+
+            (kind: MainActionCondition, weight: 1),
+            (kind: MainActionParam, weight: 1),
+            (kind: MainAction, weight: 1),
+            (kind: SelfLifespan, weight: 1),
+            (kind: SeedGene, weight: 1),
+        ],
+
+        // Random thresholds for the corresponding sensor families.
+        condition_params: (
+            life_energy_max: 64,
+            organics_max: 16,
+            soil_energy_max: 8,
+            pollution_max: 64,
+            steps_divides_max: 64,
+        ),
+    ),
+)

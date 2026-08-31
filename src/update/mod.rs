@@ -1,5 +1,6 @@
 use crate::{
     cells::WorldCell,
+    config::SimulationConfig,
     cells::life_cell::genome::GenomePool,
     grid::{Area, Grid},
     types::State,
@@ -39,12 +40,29 @@ impl EnvironmentBuffers {
 /// Diffuse the environment exactly once per simulation step using a read/write
 /// buffer. This removes order dependence and directional bias from the old
 /// in-place 3x3 averaging.
-pub fn update_environment(grid: &mut Grid<WorldCell>, buffers: &mut EnvironmentBuffers) {
+pub fn update_environment(
+    grid: &mut Grid<WorldCell>,
+    buffers: &mut EnvironmentBuffers,
+    config: &SimulationConfig,
+) {
     buffers.ensure_size(grid);
-    update_soil(grid, &mut buffers.soil_energy);
-    update_air(grid, &mut buffers.pollution);
+    update_soil(
+        grid,
+        &mut buffers.soil_energy,
+        config.environment.soil_diffusion,
+    );
+    update_air(
+        grid,
+        &mut buffers.pollution,
+        config.environment.air_diffusion,
+    );
 }
 
-pub fn update_world(state: &mut State, area: &mut Area<WorldCell>, genomes: &mut GenomePool) {
-    update_life(state, area, genomes);
+pub fn update_world(
+    state: &mut State,
+    area: &mut Area<WorldCell>,
+    genomes: &mut GenomePool,
+    config: &SimulationConfig,
+) {
+    update_life(state, area, genomes, config);
 }

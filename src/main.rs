@@ -1,4 +1,5 @@
 mod cells;
+mod config;
 mod grid;
 mod plugins;
 mod types;
@@ -13,10 +14,14 @@ use bevy::{
         RenderPlugin,
     },
 };
+use config::SimulationConfig;
 use plugins::{control, world::WorldPlugin};
 
 fn main() {
+    let simulation_config = SimulationConfig::load();
+
     App::new()
+        .insert_resource(simulation_config)
         .add_plugins((
             DefaultPlugins
                 .set(WindowPlugin {

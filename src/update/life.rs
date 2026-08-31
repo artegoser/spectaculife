@@ -18,6 +18,7 @@ use crate::{
         soil_cell::{MAX_ENERGY_LIFE, MAX_ORGANIC_LIFE},
         WorldCell,
     },
+    config::SimulationConfig,
     grid::Area,
     types::{
         CellDir::{self, *},
@@ -25,7 +26,12 @@ use crate::{
     },
 };
 
-pub fn update_life(state: &mut State, area: &mut Area<WorldCell>, genomes: &mut GenomePool) {
+pub fn update_life(
+    state: &mut State,
+    area: &mut Area<WorldCell>,
+    genomes: &mut GenomePool,
+    config: &SimulationConfig,
+) {
     if let Alive(mut life) = area.center.life {
         if life.steps_to_death == 0 {
             return kill(area, genomes);
@@ -65,7 +71,7 @@ pub fn update_life(state: &mut State, area: &mut Area<WorldCell>, genomes: &mut 
         // Process genome
         match life.ty {
             Stem(handle) => {
-                if !process_genome(state, area, &mut life, handle, genomes) {
+                if !process_genome(state, area, &mut life, handle, genomes, config) {
                     return;
                 }
             }
@@ -82,6 +88,7 @@ fn process_genome(
     life: &mut AliveCell,
     handle: GenomeHandle,
     genomes: &mut GenomePool,
+    config: &SimulationConfig,
 ) -> bool {
     let gene_snapshot = genomes.get(handle).active_gene();
 
@@ -99,7 +106,9 @@ fn process_genome(
                 // Failed growth used to damage the organism's own tissue. Only
                 // competition with another organism causes collision damage.
                 if target.organism_id != life.organism_id {
-                    target.steps_to_death = target.steps_to_death.saturating_sub(250);
+                    target.steps_to_death = target
+                                .steps_to_death
+                                .saturating_sub(config.world.collision_damage);
                     area.$dir.life = Alive(target);
                 }
                 false
@@ -261,7 +270,9 @@ fn process_genome(
                 MultiplySelf(lifespan, next_gene) => {
                     if let Alive(mut target) = area.$dir.life {
                         if target.organism_id != life.organism_id {
-                            target.steps_to_death = target.steps_to_death.saturating_sub(250);
+                            target.steps_to_death = target
+                                .steps_to_death
+                                .saturating_sub(config.world.collision_damage);
                             area.$dir.life = Alive(target);
                         }
                     } else {
@@ -282,12 +293,14 @@ fn process_genome(
                 CreateSeed(lifespan) => {
                     if let Alive(mut target) = area.$dir.life {
                         if target.organism_id != life.organism_id {
-                            target.steps_to_death = target.steps_to_death.saturating_sub(250);
+                            target.steps_to_death = target
+                                .steps_to_death
+                                .saturating_sub(config.world.collision_damage);
                             area.$dir.life = Alive(target);
                         }
                     } else {
                         let mut child_genome = *genomes.get(handle);
-                        child_genome.mutate();
+                        child_genome.mutate(&config.genetics);
                         child_genome.active_gene = child_genome.seed_gene;
                         let child_handle = genomes.alloc(child_genome);
                         let child_organism_id = state.allocate_organism_id();

@@ -61,6 +61,9 @@ pub struct State {
     pub organic_visible: bool,
     pub life_visible: bool,
     pub pollution_visible: bool,
+    pub soil_energy_visible: bool,
+    pub energy_directions_visible: bool,
+    pub hud_visible: bool,
 
     pub simulation_step: usize,
 
@@ -77,6 +80,9 @@ impl Default for State {
             organic_visible: true,
             life_visible: true,
             pollution_visible: true,
+            soil_energy_visible: true,
+            energy_directions_visible: true,
+            hud_visible: true,
 
             simulation_step: 0,
 

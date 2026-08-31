@@ -1,92 +1,312 @@
 use bevy::{
-    input::{
-        mouse::{MouseMotion, MouseWheel},
-    },
+    input::mouse::{MouseMotion, MouseWheel},
     math::{uvec2, vec3},
     prelude::*,
 };
 use bevy_fast_tilemap::prelude::*;
 
-use crate::types::State;
+use crate::{
+    config::{SimulationConfig, DEFAULT_CONFIG_PATH},
+    types::State,
+};
 
-use super::world::SimulationWorker;
+use super::world::{
+    EnergyDirectionsLayer, LifeLayer, OrganicsLayer, PollutionLayer, SimulationWorker,
+    SoilEnergyLayer,
+};
 
 #[derive(Default)]
 pub struct ControlPlugin;
 
+#[derive(Component)]
+struct HudRoot;
+
+#[derive(Component)]
+struct HudText;
+
+#[derive(Debug, Clone, Copy, Event)]
+enum ControlAction {
+    TogglePause,
+    Step,
+    Reset,
+    ToggleOrganics,
+    ToggleLife,
+    TogglePollution,
+    ToggleSoilEnergy,
+    ToggleEnergyDirections,
+    ToggleHud,
+}
+
 impl Plugin for ControlPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(
-            Update,
-            (
-                keyboard_input,
-                mouse_controls_camera,
-                update_cursor_position,
-            ),
-        );
+        app.add_event::<ControlAction>()
+            .add_systems(Startup, spawn_hud)
+            .add_systems(
+                Update,
+                (
+                    keyboard_input,
+                    hud_button_input,
+                    apply_control_actions,
+                    mouse_controls_camera,
+                    update_cursor_position,
+                    update_hud,
+                )
+                    .chain(),
+            );
     }
 }
 
-fn keyboard_input(
-    keys: Res<ButtonInput<KeyCode>>,
+fn keyboard_input(keys: Res<ButtonInput<KeyCode>>, mut actions: EventWriter<ControlAction>) {
+    let shortcuts = [
+        (KeyCode::Space, ControlAction::TogglePause),
+        (KeyCode::KeyN, ControlAction::Step),
+        (KeyCode::KeyI, ControlAction::Reset),
+        (KeyCode::KeyO, ControlAction::ToggleOrganics),
+        (KeyCode::KeyL, ControlAction::ToggleLife),
+        (KeyCode::KeyP, ControlAction::TogglePollution),
+        (KeyCode::KeyS, ControlAction::ToggleSoilEnergy),
+        (KeyCode::KeyD, ControlAction::ToggleEnergyDirections),
+        (KeyCode::KeyH, ControlAction::ToggleHud),
+    ];
+
+    for (key, action) in shortcuts {
+        if keys.just_pressed(key) {
+            actions.send(action);
+        }
+    }
+}
+
+fn hud_button_input(
+    interactions: Query<(&Interaction, &ControlAction), (Changed<Interaction>, With<Button>)>,
+    mut actions: EventWriter<ControlAction>,
+) {
+    for (interaction, action) in &interactions {
+        if *interaction == Interaction::Pressed {
+            actions.send(*action);
+        }
+    }
+}
+
+fn apply_control_actions(
+    mut actions: EventReader<ControlAction>,
     mut state: ResMut<State>,
-    mut maps: Query<(&Handle<Map>, &mut Visibility)>,
+    mut layers: ParamSet<(
+        Query<&mut Visibility, With<OrganicsLayer>>,
+        Query<&mut Visibility, With<LifeLayer>>,
+        Query<&mut Visibility, With<PollutionLayer>>,
+        Query<&mut Visibility, With<SoilEnergyLayer>>,
+        Query<&mut Visibility, With<EnergyDirectionsLayer>>,
+        Query<&mut Visibility, With<HudRoot>>,
+    )>,
     sim: Option<Res<SimulationWorker>>,
 ) {
-    if keys.just_pressed(KeyCode::Space) {
-        state.paused = !state.paused;
-        if let Some(sim) = &sim {
-            sim.set_paused(state.paused);
-        }
-    }
-
-    if keys.just_pressed(KeyCode::KeyN) {
-        if let Some(sim) = &sim {
-            sim.request_step();
-        }
-    }
-
-    if keys.just_pressed(KeyCode::KeyI) {
-        state.initialized = false;
-        // Re-initialization will be handled by a dedicated system if needed
-    }
-
-    if keys.just_pressed(KeyCode::KeyO) {
-        let (_, mut visibility) = maps.iter_mut().nth(0).unwrap();
-        if state.organic_visible {
-            *visibility = Visibility::Hidden;
-            state.organic_visible = false;
-        } else {
-            *visibility = Visibility::Visible;
-            state.organic_visible = true;
-        }
-    }
-
-    if keys.just_pressed(KeyCode::KeyL) {
-        let (_, mut visibility) = maps.iter_mut().nth(1).unwrap();
-        if state.life_visible {
-            *visibility = Visibility::Hidden;
-            state.life_visible = false;
-        } else {
-            *visibility = Visibility::Visible;
-            state.life_visible = true;
-        }
-    }
-
-    if keys.just_pressed(KeyCode::KeyP) {
-        let (_, mut visibility) = maps.iter_mut().nth(2).unwrap();
-        if state.pollution_visible {
-            *visibility = Visibility::Hidden;
-            state.pollution_visible = false;
-        } else {
-            *visibility = Visibility::Visible;
-            state.pollution_visible = true;
+    for action in actions.read().copied() {
+        match action {
+            ControlAction::TogglePause => {
+                state.paused = !state.paused;
+                if let Some(sim) = &sim {
+                    sim.set_paused(state.paused);
+                }
+            }
+            ControlAction::Step => {
+                if let Some(sim) = &sim {
+                    sim.request_step();
+                }
+            }
+            ControlAction::Reset => {
+                if let Some(sim) = &sim {
+                    sim.reinitialize();
+                    state.simulation_step = 0;
+                }
+            }
+            ControlAction::ToggleOrganics => {
+                state.organic_visible = !state.organic_visible;
+                let mut query = layers.p0();
+                set_visibility(&mut query, state.organic_visible);
+            }
+            ControlAction::ToggleLife => {
+                state.life_visible = !state.life_visible;
+                let mut query = layers.p1();
+                set_visibility(&mut query, state.life_visible);
+            }
+            ControlAction::TogglePollution => {
+                state.pollution_visible = !state.pollution_visible;
+                let mut query = layers.p2();
+                set_visibility(&mut query, state.pollution_visible);
+            }
+            ControlAction::ToggleSoilEnergy => {
+                state.soil_energy_visible = !state.soil_energy_visible;
+                let mut query = layers.p3();
+                set_visibility(&mut query, state.soil_energy_visible);
+            }
+            ControlAction::ToggleEnergyDirections => {
+                state.energy_directions_visible = !state.energy_directions_visible;
+                let mut query = layers.p4();
+                set_visibility(&mut query, state.energy_directions_visible);
+            }
+            ControlAction::ToggleHud => {
+                state.hud_visible = !state.hud_visible;
+                let mut query = layers.p5();
+                set_visibility(&mut query, state.hud_visible);
+            }
         }
     }
 }
 
-/// Use RMB for panning
-/// Use scroll wheel for zooming
+fn set_visibility<M: Component>(query: &mut Query<&mut Visibility, With<M>>, visible: bool) {
+    for mut visibility in query.iter_mut() {
+        *visibility = if visible {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
+    }
+}
+
+fn spawn_hud(mut commands: Commands) {
+    commands
+        .spawn((
+            NodeBundle {
+                style: Style {
+                    position_type: PositionType::Absolute,
+                    top: Val::Px(10.0),
+                    left: Val::Px(10.0),
+                    padding: UiRect::all(Val::Px(10.0)),
+                    max_width: Val::Px(760.0),
+                    flex_direction: FlexDirection::Column,
+                    ..default()
+                },
+                background_color: BackgroundColor(Color::srgba(0.02, 0.025, 0.035, 0.88)),
+                ..default()
+            },
+            HudRoot,
+        ))
+        .with_children(|parent| {
+            parent.spawn((
+                TextBundle::from_section(
+                    "Spectaculife",
+                    TextStyle {
+                        font_size: 14.0,
+                        color: Color::srgb(0.92, 0.94, 0.98),
+                        ..default()
+                    },
+                ),
+                HudText,
+            ));
+
+            parent
+                .spawn(NodeBundle {
+                    style: Style {
+                        flex_direction: FlexDirection::Row,
+                        margin: UiRect {
+                            top: Val::Px(8.0),
+                            ..default()
+                        },
+                        ..default()
+                    },
+                    ..default()
+                })
+                .with_children(|buttons| {
+                    macro_rules! hud_button {
+                        ($label:expr, $action:expr) => {{
+                            buttons
+                                .spawn((
+                                    ButtonBundle {
+                                        style: Style {
+                                            padding: UiRect {
+                                                left: Val::Px(7.0),
+                                                right: Val::Px(7.0),
+                                                top: Val::Px(4.0),
+                                                bottom: Val::Px(4.0),
+                                            },
+                                            margin: UiRect {
+                                                right: Val::Px(4.0),
+                                                ..default()
+                                            },
+                                            ..default()
+                                        },
+                                        background_color: BackgroundColor(Color::srgba(
+                                            0.12, 0.14, 0.19, 0.95,
+                                        )),
+                                        ..default()
+                                    },
+                                    $action,
+                                ))
+                                .with_children(|button| {
+                                    button.spawn(TextBundle::from_section(
+                                        $label,
+                                        TextStyle {
+                                            font_size: 11.0,
+                                            color: Color::srgb(0.92, 0.94, 0.98),
+                                            ..default()
+                                        },
+                                    ));
+                                });
+                        }};
+                    }
+
+                    hud_button!("Pause [Space]", ControlAction::TogglePause);
+                    hud_button!("Step [N]", ControlAction::Step);
+                    hud_button!("Reset [I]", ControlAction::Reset);
+                    hud_button!("Organics [O]", ControlAction::ToggleOrganics);
+                    hud_button!("Life [L]", ControlAction::ToggleLife);
+                    hud_button!("Pollution [P]", ControlAction::TogglePollution);
+                    hud_button!("Soil [S]", ControlAction::ToggleSoilEnergy);
+                    hud_button!("Paths [D]", ControlAction::ToggleEnergyDirections);
+                });
+        });
+}
+
+fn update_hud(
+    state: Res<State>,
+    config: Res<SimulationConfig>,
+    mut text_query: Query<&mut Text, With<HudText>>,
+) {
+    if !state.is_changed() && !config.is_changed() {
+        return;
+    }
+
+    let status = if state.paused { "PAUSED" } else { "RUNNING" };
+    let on_off = |value: bool| if value { "on" } else { "off" };
+
+    let value = format!(
+        "Spectaculife  |  {status}  |  step {}  |  cursor {},{}\n\
+Layers: [O] organics {}   [L] life {}   [P] pollution {}   [S] soil energy {}   [D] energy paths {}\n\
+World: {}x{}   spawn spacing {}   initial soil {:.1}..{:.1}   soil diffusion {:.2}   air diffusion {:.2}\n\
+Genetics: lifespan {}..{}   initial mutation {}..{}%   mutation bounds {}..{}%\n\
+Hotkeys: [Space] pause/resume   [N] single step   [I] reset   [O/L/P/S/D] layers   [H] HUD\n\
+Mouse: LMB/RMB drag   wheel zoom\n\
+Config: {}",
+        state.simulation_step,
+        state.cursor_position.x,
+        state.cursor_position.y,
+        on_off(state.organic_visible),
+        on_off(state.life_visible),
+        on_off(state.pollution_visible),
+        on_off(state.soil_energy_visible),
+        on_off(state.energy_directions_visible),
+        config.world.width,
+        config.world.height,
+        config.world.organism_spacing,
+        config.world.initial_soil_energy.min,
+        config.world.initial_soil_energy.max,
+        config.environment.soil_diffusion,
+        config.environment.air_diffusion,
+        config.genetics.lifespan.min,
+        config.genetics.lifespan.max,
+        config.genetics.initial_mutation_rate.min,
+        config.genetics.initial_mutation_rate.max,
+        config.genetics.mutation_rate_min,
+        config.genetics.mutation_rate_max,
+        DEFAULT_CONFIG_PATH,
+    );
+
+    for mut text in &mut text_query {
+        text.sections[0].value.clone_from(&value);
+    }
+}
+
+/// Use LMB/RMB for panning and the scroll wheel for zooming.
 fn mouse_controls_camera(
     mouse_button: Res<ButtonInput<MouseButton>>,
     mut mouse_motion_events: EventReader<MouseMotion>,
@@ -128,21 +348,24 @@ fn update_cursor_position(
     mut cursor_moved_events: EventReader<CursorMoved>,
     mut camera_query: Query<(&GlobalTransform, &Camera), With<OrthographicProjection>>,
     mut state: ResMut<State>,
-    maps: Query<&Handle<Map>>,
-
-    materials: ResMut<Assets<Map>>,
+    life_map: Query<&Handle<Map>, With<LifeLayer>>,
+    materials: Res<Assets<Map>>,
 ) {
-    for event in cursor_moved_events.read() {
-        let map = materials.get(maps.iter().nth(1).unwrap()).unwrap();
+    let Some(map_handle) = life_map.iter().next() else {
+        return;
+    };
+    let Some(map) = materials.get(map_handle) else {
+        return;
+    };
 
+    for event in cursor_moved_events.read() {
         for (global, camera) in camera_query.iter_mut() {
             if let Some(world) = camera
                 .viewport_to_world(global, event.position)
                 .map(|ray| ray.origin.truncate())
             {
-                let coord = map.world_to_map(world);
-
-                let coord = coord
+                let coord = map
+                    .world_to_map(world)
                     .as_uvec2()
                     .clamp(uvec2(0, 0), map.map_size() - uvec2(1, 1));
 
