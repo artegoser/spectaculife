@@ -5,7 +5,7 @@ use crate::cells::{
     },
     WorldCell,
 };
-use crate::config::SimulationConfig;
+use crate::config::{RenderConfig, SimulationConfig};
 use crate::grid::Grid;
 use crate::types::{Settings, State};
 use crate::update::{update_simulation_step, SimulationBuffers};
@@ -422,7 +422,7 @@ fn receive_and_render(
     camera: Query<&Transform, With<Camera>>,
     mut world: ResMut<Grid<WorldCell>>,
     settings: Res<Settings>,
-    config: Res<SimulationConfig>,
+    render_config: Res<RenderConfig>,
     mut state: ResMut<State>,
     sim: Option<Res<SimulationWorker>>,
 ) {
@@ -436,15 +436,15 @@ fn receive_and_render(
     let camera_scale = camera.iter().next().map(|t| t.scale.x).unwrap_or(1.0);
     let mip_blend = overview_blend(
         camera_scale,
-        config.render.mip_lod_fade_start,
-        config.render.mip_lod_fade_end,
+        render_config.mip_lod_fade_start,
+        render_config.mip_lod_fade_end,
     );
 
     // Build the composed world texture as soon as the smooth transition begins.
     // Its sampler uses linear minification + linear mip filtering, so once this
     // contribution becomes visible there is no nearest-neighbor shimmer.
     if mip_blend > 0.0 && overview.needs_overview_rebuild(&state) {
-        overview.rebuild_overview(&world, &settings, &config, &state, &mut images);
+        overview.rebuild_overview(&world, &settings, &render_config, &state, &mut images);
     }
 
     // Once the transition has completed, detailed tile buffers no longer need
@@ -477,7 +477,7 @@ fn receive_and_render(
             let life_texture = cell.life.texture_id(&world, index);
             let pollution_texture = cell.air.pollution as u32;
             let soil_energy_texture = ((cell.soil.energy * 255.0
-                / config.environment.soil_energy_render_max)
+                / render_config.soil_energy_render_max)
                 as u32)
                 .min(255);
             let energy_directions_texture = cell.life.energy_directions_texture_id();
@@ -506,7 +506,7 @@ fn receive_and_render(
 fn sync_render_lod_visibility(
     camera: Query<&Transform, With<Camera>>,
     state: Res<State>,
-    config: Res<SimulationConfig>,
+    render_config: Res<RenderConfig>,
     mut layers: ParamSet<(
         Query<(&mut Visibility, &mut MapAttributes), With<OrganicsLayer>>,
         Query<(&mut Visibility, &mut MapAttributes), With<LifeLayer>>,
@@ -519,8 +519,8 @@ fn sync_render_lod_visibility(
     let camera_scale = camera.iter().next().map(|t| t.scale.x).unwrap_or(1.0);
     let mip_alpha = overview_blend(
         camera_scale,
-        config.render.mip_lod_fade_start,
-        config.render.mip_lod_fade_end,
+        render_config.mip_lod_fade_start,
+        render_config.mip_lod_fade_end,
     );
     let detail_alpha = 1.0 - mip_alpha;
 

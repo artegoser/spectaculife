@@ -1,0 +1,10 @@
+// Rendering only. No simulation/evolution parameters belong in this file.
+(
+    soil_energy_render_max: 32.0,
+
+    // Smooth logarithmic crossfade from exact tile sprites into the trilinear
+    // mipmapped overview. Camera zoom itself is exponential, so these values
+    // are naturally interpreted as zoom scales rather than a linear distance.
+    mip_lod_fade_start: 4.0,
+    mip_lod_fade_end: 16.0,
+)

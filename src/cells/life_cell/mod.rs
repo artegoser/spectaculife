@@ -1,6 +1,7 @@
 use genome::GenomeHandle;
 
 use crate::{
+    config::LifeConfig,
     grid::Grid,
     types::CellDir::{self, *},
     utils::merge_energy,
@@ -8,7 +9,6 @@ use crate::{
 
 use super::WorldCell;
 
-pub const MAX_ENERGY_TRANSFER: f32 = 1.;
 
 pub mod genome;
 
@@ -84,9 +84,9 @@ impl LifeCell {
         }
     }
 
-    pub const fn organics(&self) -> u8 {
+    pub fn organics(&self, config: &LifeConfig) -> u8 {
         match self {
-            Self::Alive(alive_cell) => alive_cell.organics(),
+            Self::Alive(alive_cell) => alive_cell.organics(config),
             Self::Dead => 0,
         }
     }
@@ -253,12 +253,12 @@ impl AliveCell {
         self.ty.is_fertile()
     }
 
-    pub const fn consumption(&self) -> f32 {
-        self.ty.consumption()
+    pub fn consumption(&self, config: &LifeConfig) -> f32 {
+        self.ty.consumption(config)
     }
 
-    pub const fn organics(&self) -> u8 {
-        self.ty.organics()
+    pub fn organics(&self, config: &LifeConfig) -> u8 {
+        self.ty.organics(config)
     }
 }
 
@@ -306,25 +306,25 @@ impl LifeType {
         }
     }
 
-    pub const fn consumption(&self) -> f32 {
+    pub fn consumption(&self, config: &LifeConfig) -> f32 {
         match self {
-            LifeType::Pipe => 0.1,
-            LifeType::Leaf => 0.6,
-            LifeType::Stem(_) => 0.1,
-            LifeType::Root => 0.2,
-            LifeType::Reactor => 0.4,
-            LifeType::Filter => 0.3,
+            LifeType::Pipe => config.consumption.pipe,
+            LifeType::Leaf => config.consumption.leaf,
+            LifeType::Stem(_) => config.consumption.stem,
+            LifeType::Root => config.consumption.root,
+            LifeType::Reactor => config.consumption.reactor,
+            LifeType::Filter => config.consumption.filter,
         }
     }
 
-    pub const fn organics(&self) -> u8 {
+    pub fn organics(&self, config: &LifeConfig) -> u8 {
         match self {
-            LifeType::Pipe => 1,
-            LifeType::Leaf => 4,
-            LifeType::Stem(_) => 2,
-            LifeType::Root => 2,
-            LifeType::Reactor => 2,
-            LifeType::Filter => 3,
+            LifeType::Pipe => config.organics.pipe,
+            LifeType::Leaf => config.organics.leaf,
+            LifeType::Stem(_) => config.organics.stem,
+            LifeType::Root => config.organics.root,
+            LifeType::Reactor => config.organics.reactor,
+            LifeType::Filter => config.organics.filter,
         }
     }
 
@@ -333,6 +333,7 @@ impl LifeType {
         organism_id: u64,
         parent_dir: CellDir,
         steps_to_death: u16,
+        config: &LifeConfig,
     ) -> LifeCell {
         let new_cell_energy_directions = if self.is_energy_generator() {
             EnergyDirections::from_direction(&parent_dir)
@@ -348,7 +349,7 @@ impl LifeType {
         LifeCell::Alive(AliveCell::new(
             self,
             organism_id,
-            2. * self.consumption(),
+            config.newborn_energy_consumption_multiplier * self.consumption(config),
             new_cell_energy_directions,
             Some(parent_dir),
             steps_to_death,

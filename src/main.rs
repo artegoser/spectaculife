@@ -14,14 +14,16 @@ use bevy::{
         RenderPlugin,
     },
 };
-use config::SimulationConfig;
+use config::{RenderConfig, SimulationConfig};
 use plugins::{control, world::WorldPlugin};
 
 fn main() {
     let simulation_config = SimulationConfig::load();
+    let render_config = RenderConfig::load();
 
     App::new()
         .insert_resource(simulation_config)
+        .insert_resource(render_config)
         .add_plugins((
             DefaultPlugins
                 .set(WindowPlugin {

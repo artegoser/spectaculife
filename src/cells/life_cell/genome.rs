@@ -2,7 +2,7 @@ use rand::{thread_rng, Rng};
 
 use crate::config::{
     choose_weighted, ConditionKind, ConditionParamConfig, DirectionActionKind, GeneActionKind,
-    GeneticsConfig, MutationEditKind, MutationGeneTarget,
+    GeneticsConfig, GrowthEnergyConfig, MutationEditKind, MutationGeneTarget,
 };
 
 pub const MAX_GENES: u8 = 32;
@@ -137,11 +137,7 @@ impl Genome {
             return;
         }
 
-        self.mutate_one(&mut rng, config);
-        if rng.gen_ratio(
-            config.second_mutation_edit_chance_percent as u32,
-            100,
-        ) {
+        for _ in 0..config.mutation_edits_per_event {
             self.mutate_one(&mut rng, config);
         }
 
@@ -190,6 +186,28 @@ impl Genome {
             DirectionDown => gene.down = GeneDirectionAction::random(rng, config),
             DirectionLeft => gene.left = GeneDirectionAction::random(rng, config),
             DirectionRight => gene.right = GeneDirectionAction::random(rng, config),
+
+            DirectionUpLifespan => gene.up.mutate_lifespan(rng, config),
+            DirectionDownLifespan => gene.down.mutate_lifespan(rng, config),
+            DirectionLeftLifespan => gene.left.mutate_lifespan(rng, config),
+            DirectionRightLifespan => gene.right.mutate_lifespan(rng, config),
+            DirectionUpNextGene => gene.up.mutate_next_gene(rng),
+            DirectionDownNextGene => gene.down.mutate_next_gene(rng),
+            DirectionLeftNextGene => gene.left.mutate_next_gene(rng),
+            DirectionRightNextGene => gene.right.mutate_next_gene(rng),
+
+            CopyDownToUp => gene.up = gene.down,
+            CopyLeftToUp => gene.up = gene.left,
+            CopyRightToUp => gene.up = gene.right,
+            CopyUpToDown => gene.down = gene.up,
+            CopyLeftToDown => gene.down = gene.left,
+            CopyRightToDown => gene.down = gene.right,
+            CopyUpToLeft => gene.left = gene.up,
+            CopyDownToLeft => gene.left = gene.down,
+            CopyRightToLeft => gene.left = gene.right,
+            CopyUpToRight => gene.right = gene.up,
+            CopyDownToRight => gene.right = gene.down,
+            CopyLeftToRight => gene.right = gene.left,
 
             Condition1 => {
                 gene.condition_1 = GeneCondition::random(rng, config);
@@ -258,6 +276,7 @@ impl Genome {
             }
             MainAction => gene.main_action = GeneAction::random(rng, config),
             SelfLifespan => gene.self_lifespan = LifeSpan::random(rng, config),
+            WholeGene => *gene = Gene::random(rng, config),
             SeedGene => unreachable!(),
         }
     }
@@ -341,11 +360,11 @@ impl Gene {
         }
     }
 
-    pub fn energy_capacity(&self) -> f32 {
-        self.up.energy_capacity()
-            + self.down.energy_capacity()
-            + self.left.energy_capacity()
-            + self.right.energy_capacity()
+    pub fn energy_capacity(&self, costs: &GrowthEnergyConfig) -> f32 {
+        self.up.energy_capacity(costs)
+            + self.down.energy_capacity(costs)
+            + self.left.energy_capacity(costs)
+            + self.right.energy_capacity(costs)
     }
 }
 
@@ -377,17 +396,35 @@ impl GeneDirectionAction {
         }
     }
 
-    pub fn energy_capacity(&self) -> f32 {
+    fn mutate_lifespan<R: Rng + ?Sized>(&mut self, rng: &mut R, config: &GeneticsConfig) {
+        let lifespan = LifeSpan::random(rng, config);
+        match self {
+            Self::MakeLeaf(value)
+            | Self::MakeRoot(value)
+            | Self::MakeReactor(value)
+            | Self::MakeFilter(value)
+            | Self::CreateSeed(value) => *value = lifespan,
+            Self::MultiplySelf(value, _) => *value = lifespan,
+            Self::KillCell | Self::Nothing => {}
+        }
+    }
+
+    fn mutate_next_gene<R: Rng + ?Sized>(&mut self, rng: &mut R) {
+        if let Self::MultiplySelf(_, next_gene) = self {
+            *next_gene = GeneLocation::random(rng);
+        }
+    }
+
+    pub fn energy_capacity(&self, costs: &GrowthEnergyConfig) -> f32 {
         use GeneDirectionAction::*;
         match self {
-            MakeLeaf(_) => 1.2,
-            MakeRoot(_) => 0.4,
-            MakeReactor(_) => 0.8,
-            MultiplySelf(_, _) => 0.8,
-            CreateSeed(_) => 0.8,
-            MakeFilter(_) => 0.6,
-            Nothing => 0.,
-            KillCell => 0.,
+            MakeLeaf(_) => costs.leaf,
+            MakeRoot(_) => costs.root,
+            MakeReactor(_) => costs.reactor,
+            MultiplySelf(_, _) => costs.multiply_self,
+            CreateSeed(_) => costs.create_seed,
+            MakeFilter(_) => costs.filter,
+            Nothing | KillCell => 0.0,
         }
     }
 }

@@ -10,7 +10,7 @@ use rayon::prelude::*;
 
 use crate::{
     cells::WorldCell,
-    config::SimulationConfig,
+    config::RenderConfig,
     grid::Grid,
     types::{Settings, State},
 };
@@ -93,7 +93,7 @@ impl OverviewRenderer {
         &mut self,
         grid: &Grid<WorldCell>,
         settings: &Settings,
-        config: &SimulationConfig,
+        config: &RenderConfig,
         state: &State,
         images: &mut Assets<Image>,
     ) -> bool {
@@ -110,7 +110,7 @@ impl OverviewRenderer {
         self.level_a.resize(base_len, LinearPremul::default());
 
         let flags = layer_flags(state);
-        let soil_render_max = config.environment.soil_energy_render_max.max(f32::EPSILON);
+        let soil_render_max = config.soil_energy_render_max.max(f32::EPSILON);
         self.level_a
             .par_iter_mut()
             .enumerate()

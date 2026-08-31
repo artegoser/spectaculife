@@ -1,73 +1,164 @@
-// Spectaculife simulation tuning.
+// Spectaculife simulation/evolution tuning.
 //
-// All `weight` values are relative weights, NOT percentages. They do not need
-// to add up to 100. Example: weights 6, 2, 2 mean 60%, 20%, 20%.
-// Adding/rebalancing an entry never requires recalculating numeric ranges.
+// `weight` values are relative weights, not percentages. They never need to
+// add up to 100. This file intentionally contains no renderer settings.
 (
     world: (
         width: 512,
         height: 512,
-        organism_spacing: 16,
 
+        // Keep a large independent starting population. 4 means 128x128 =
+        // 16384 independently generated founders on a 512x512 world.
+        organism_spacing: 4,
+
+        // Spatially heterogeneous resources give sensor/condition genes
+        // something useful to react to from the first generation.
         initial_organics: (min: 0, max: 12),
-
-        // Kept deliberately dark/low. The previous fix used 0..24, which made
-        // almost the entire soil-energy layer visually bright.
         initial_soil_energy: (min: 0.0, max: 3.0),
         initial_pollution: (min: 0, max: 12),
 
         initial_stem_energy: 100.0,
         initial_stem_lifespan: 2,
-        collision_damage: 250,
     ),
 
     environment: (
         soil_diffusion: 0.18,
         air_diffusion: 0.22,
-        soil_energy_render_max: 32.0,
     ),
 
-    render: (
-        // Smoothly crossfade from exact tile sprites into the composed world
-        // texture before nearest-neighbor undersampling starts to shimmer.
-        // Interpolation is logarithmic in camera scale, matching exponential zoom.
-        mip_lod_fade_start: 4.0,
-        mip_lod_fade_end: 16.0,
+    life: (
+        lethal_organics: 16,
+        lethal_soil_energy: 32.0,
+
+        // Energy placed into a newborn = this * that cell type's maintenance.
+        newborn_energy_consumption_multiplier: 2.0,
+
+        transfer: (
+            // Preserve enough energy for roughly the next maintenance step.
+            reserve_consumption_multiplier: 1.1,
+
+            // `None` removes the historical global 1-energy/tick bottleneck.
+            // Branches still share the actually available energy, but a colony
+            // is no longer forced through the throughput of one linear front.
+            max_energy_per_tick: None,
+        ),
+
+        collision: (
+            // Growing back into your own trail must be able to erase it; this
+            // is what permits front-based movement, loops and reversals.
+            self_damage: 250,
+            foreign_damage: 250,
+        ),
+
+        predation: (
+            // None = a successful kill can recover all currently stored energy.
+            // Use Some(x) to cap predation income without changing code.
+            max_energy_gain: None,
+        ),
+
+        death: (
+            energy_to_soil_fraction: 0.5,
+            pollution_per_organic_divisor: 2,
+            minimum_pollution: 1,
+        ),
+
+        consumption: (
+            pipe: 0.1,
+            leaf: 0.6,
+            stem: 0.1,
+            root: 0.2,
+            reactor: 0.4,
+            filter: 0.3,
+        ),
+
+        // Organic matter returned to soil when a cell dies.
+        organics: (
+            pipe: 1,
+            leaf: 4,
+            stem: 2,
+            root: 2,
+            reactor: 2,
+            filter: 3,
+        ),
+
+        // Energy required by a Stem to attempt each directional construction.
+        growth_energy: (
+            leaf: 1.2,
+            root: 0.4,
+            reactor: 0.8,
+            filter: 0.6,
+            multiply_self: 0.8,
+            create_seed: 0.8,
+        ),
+
+        generators: (
+            leaf: (
+                // Historical value was 1.2. 0.8 keeps a leaf viable (maintenance
+                // is 0.6) but cuts its steady surplus from ~0.6 to ~0.2/tick,
+                // so finite soil/pollution energy and predation remain competitive.
+                energy_per_tick: 0.8,
+                pollution_divisor: 4.0,
+            ),
+
+            root: (
+                low_resource_threshold: 8,
+                low_resource_take: 1,
+                extraction_fraction: 0.16,
+                energy_efficiency: 0.6,
+                soil_energy_output: 0.2,
+                pollution_output: 0.5,
+            ),
+
+            reactor: (
+                extraction_fraction: 0.16,
+                energy_efficiency: 0.4,
+            ),
+
+            filter: (
+                low_resource_threshold: 8,
+                low_resource_take: 1,
+                extraction_fraction: 0.16,
+                energy_efficiency: 0.5,
+            ),
+        ),
     ),
 
     genetics: (
         lifespan: (min: 50, max: 1000),
-        initial_mutation_rate: (min: 1, max: 12),
-        mutation_rate_min: 1,
-        mutation_rate_max: 25,
 
-        second_mutation_edit_chance_percent: 5,
+        // Mutation happens on CreateSeed only. MultiplySelf deliberately copies
+        // the genome unchanged.
+        initial_mutation_rate: (min: 5, max: 100),
+        mutation_rate_min: 1,
+        mutation_rate_max: 100,
+        mutation_edits_per_event: 10,
+
         mutation_rate_evolution_chance_percent: 10,
         mutation_rate_increase_weight: 1,
         mutation_rate_decrease_weight: 1,
 
-        // Which gene is edited when a mutation targets a gene.
+        // Most edits explore arbitrary genes; seed/active genes still receive
+        // extra pressure because they are immediately reachable.
         mutation_gene_targets: [
             (kind: SeedGene, weight: 1),
             (kind: ActiveGene, weight: 1),
-            (kind: RandomGene, weight: 2),
+            (kind: RandomGene, weight: 6),
         ],
 
-        // Initial/random direction actions. Current total weight = 16.
-        // MultiplySelf weight 6 => 37.5% per direction => 1.5 continuing
-        // Stem children per random gene on average.
+        // Restored to the original balanced distribution: each ordinary action
+        // is weight 1 and KillCell is weight 3 (total 10). In particular,
+        // MultiplySelf is no longer the 37.5% default from the earlier patch.
         direction_actions: [
-            (kind: MultiplySelf, weight: 6),
+            (kind: MultiplySelf, weight: 1),
             (kind: MakeLeaf, weight: 1),
             (kind: MakeRoot, weight: 1),
             (kind: MakeReactor, weight: 1),
             (kind: MakeFilter, weight: 1),
             (kind: CreateSeed, weight: 1),
-            (kind: Nothing, weight: 4),
-            (kind: KillCell, weight: 1),
+            (kind: Nothing, weight: 1),
+            (kind: KillCell, weight: 3),
         ],
 
-        // Conditions used by randomly generated genes and condition mutations.
         conditions: [
             (kind: LifeUp, weight: 1),
             (kind: LifeDown, weight: 1),
@@ -133,43 +224,64 @@
             (kind: Die, weight: 1),
         ],
 
-        // Relative probability of each mutation edit. No numeric match ranges.
+        // Mutation operator is fully named/data-driven. Whole direction changes
+        // remain possible, but lifespan/next-gene edits can now preserve a useful
+        // instruction. Direction-copy edits restore the cheap path to bilateral /
+        // rotationally repeated structures that the old numeric ranges provided.
         mutation_edits: [
-            (kind: DirectionUp, weight: 1),
-            (kind: DirectionDown, weight: 1),
-            (kind: DirectionLeft, weight: 1),
-            (kind: DirectionRight, weight: 1),
+            (kind: DirectionUp, weight: 8),
+            (kind: DirectionDown, weight: 8),
+            (kind: DirectionLeft, weight: 8),
+            (kind: DirectionRight, weight: 8),
+
+            (kind: DirectionUpLifespan, weight: 2),
+            (kind: DirectionDownLifespan, weight: 2),
+            (kind: DirectionLeftLifespan, weight: 2),
+            (kind: DirectionRightLifespan, weight: 2),
+            (kind: DirectionUpNextGene, weight: 2),
+            (kind: DirectionDownNextGene, weight: 2),
+            (kind: DirectionLeftNextGene, weight: 2),
+            (kind: DirectionRightNextGene, weight: 2),
+
+            (kind: CopyDownToUp, weight: 3),
+            (kind: CopyLeftToUp, weight: 3),
+            (kind: CopyRightToUp, weight: 3),
+            (kind: CopyUpToDown, weight: 3),
+            (kind: CopyLeftToDown, weight: 3),
+            (kind: CopyRightToDown, weight: 3),
+            (kind: CopyUpToLeft, weight: 3),
+            (kind: CopyDownToLeft, weight: 3),
+            (kind: CopyRightToLeft, weight: 3),
+            (kind: CopyUpToRight, weight: 3),
+            (kind: CopyDownToRight, weight: 3),
+            (kind: CopyLeftToRight, weight: 3),
 
             (kind: Condition1, weight: 1),
             (kind: Condition1Param, weight: 1),
             (kind: Condition2, weight: 1),
             (kind: Condition2Param, weight: 1),
-
             (kind: AltGene1, weight: 1),
             (kind: AltGene2, weight: 1),
             (kind: AltGene3, weight: 1),
-
             (kind: AdditionalCondition1, weight: 1),
             (kind: AdditionalCondition1Param, weight: 1),
             (kind: AdditionalCondition2, weight: 1),
             (kind: AdditionalCondition2Param, weight: 1),
-
             (kind: AdditionalAction1, weight: 1),
             (kind: AdditionalAction2, weight: 1),
             (kind: AdditionalAction3, weight: 1),
-
             (kind: MainActionCondition, weight: 1),
             (kind: MainActionParam, weight: 1),
             (kind: MainAction, weight: 1),
             (kind: SelfLifespan, weight: 1),
+            (kind: WholeGene, weight: 1),
             (kind: SeedGene, weight: 1),
         ],
 
-        // Random thresholds for the corresponding sensor families.
         condition_params: (
             life_energy_max: 64,
             organics_max: 16,
-            soil_energy_max: 8,
+            soil_energy_max: 32,
             pollution_max: 64,
             steps_divides_max: 64,
         ),

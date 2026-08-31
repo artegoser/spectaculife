@@ -6,7 +6,7 @@ use bevy::{
 use bevy_fast_tilemap::prelude::*;
 
 use crate::{
-    config::{SimulationConfig, DEFAULT_CONFIG_PATH},
+    config::{RenderConfig, SimulationConfig, DEFAULT_CONFIG_PATH, DEFAULT_RENDER_CONFIG_PATH},
     types::State,
 };
 
@@ -242,6 +242,7 @@ fn spawn_hud(mut commands: Commands) {
 fn update_hud(
     state: Res<State>,
     config: Res<SimulationConfig>,
+    render_config: Res<RenderConfig>,
     sim: Option<Res<SimulationWorker>>,
     camera: Query<&Transform, With<Camera>>,
     mut text_query: Query<&mut Text, With<HudText>>,
@@ -261,8 +262,8 @@ fn update_hud(
     let camera_scale = camera.iter().next().map(|t| t.scale.x).unwrap_or(1.0);
     let mip_blend = overview_blend(
         camera_scale,
-        config.render.mip_lod_fade_start,
-        config.render.mip_lod_fade_end,
+        render_config.mip_lod_fade_start,
+        render_config.mip_lod_fade_end,
     );
     let render_mode = if mip_blend <= 0.001 {
         "tile detail"
@@ -271,16 +272,23 @@ fn update_hud(
     } else {
         "tile -> mip blend"
     };
+    let transfer_cap = config
+        .life
+        .transfer
+        .max_energy_per_tick
+        .map(|value| format!("{value:.2}"))
+        .unwrap_or_else(|| "none".to_string());
 
     let value = format!(
         "Spectaculife  |  {status}  |  step {}  |  {:.3} ms/tick  |  {:.1} ticks/s  |  cursor {},{}\n\
 Render: {}  |  camera scale {:.2}  |  mip blend {:>3.0}%  |  fade {:.1}..{:.1}\n\
 Layers: [O] organics {}   [L] life {}   [P] pollution {}   [S] soil energy {}   [D] energy paths {}\n\
 World: {}x{}   spawn spacing {}   initial soil {:.1}..{:.1}   soil diffusion {:.2}   air diffusion {:.2}\n\
+Life: leaf +{:.2}/tick   transfer cap {}   collision self/foreign {}/{}   seed edits {}\n\
 Genetics: lifespan {}..{}   initial mutation {}..{}%   mutation bounds {}..{}%\n\
 Hotkeys: [Space] pause/resume   [N] single step   [I] reset   [O/L/P/S/D] layers   [H] HUD\n\
 Mouse: LMB/RMB drag   wheel zoom\n\
-Config: {}",
+Configs: simulation={}   render={}",
         state.simulation_step,
         tick_ms,
         ticks_per_second,
@@ -289,8 +297,8 @@ Config: {}",
         render_mode,
         camera_scale,
         mip_blend * 100.0,
-        config.render.mip_lod_fade_start,
-        config.render.mip_lod_fade_end,
+        render_config.mip_lod_fade_start,
+        render_config.mip_lod_fade_end,
         on_off(state.organic_visible),
         on_off(state.life_visible),
         on_off(state.pollution_visible),
@@ -303,6 +311,11 @@ Config: {}",
         config.world.initial_soil_energy.max,
         config.environment.soil_diffusion,
         config.environment.air_diffusion,
+        config.life.generators.leaf.energy_per_tick,
+        transfer_cap,
+        config.life.collision.self_damage,
+        config.life.collision.foreign_damage,
+        config.genetics.mutation_edits_per_event,
         config.genetics.lifespan.min,
         config.genetics.lifespan.max,
         config.genetics.initial_mutation_rate.min,
@@ -310,6 +323,7 @@ Config: {}",
         config.genetics.mutation_rate_min,
         config.genetics.mutation_rate_max,
         DEFAULT_CONFIG_PATH,
+        DEFAULT_RENDER_CONFIG_PATH,
     );
 
     for mut text in &mut text_query {

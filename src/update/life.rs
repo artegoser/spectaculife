@@ -8,12 +8,11 @@ use crate::{
                 GeneAction, GeneCondition, GeneDirectionAction, GeneLocation, Genome, GenomeHandle,
                 GenomePool,
             },
-            AliveCell, EnergyDirections, LifeCell, LifeType, MAX_ENERGY_TRANSFER,
+            AliveCell, EnergyDirections, LifeCell, LifeType,
         },
-        soil_cell::{MAX_ENERGY_LIFE, MAX_ORGANIC_LIFE},
         WorldCell,
     },
-    config::SimulationConfig,
+    config::{LifeConfig, SimulationConfig},
     grid::Grid,
     types::{CellDir, State},
 };
@@ -175,7 +174,7 @@ struct GenomePlan {
     parent_lifespan: Option<u16>,
     organic_moves: Vec<OrganicMove>,
     kill_targets: Vec<usize>,
-    collision_targets: Vec<usize>,
+    collision_targets: Vec<(usize, u16)>,
     births: Vec<BirthRequest>,
     die: bool,
 }
@@ -253,10 +252,11 @@ pub fn update_life_step(
         genomes,
         next_soil_energy,
         next_pollution,
+        &config.life,
     );
-    repair_energy_paths(grid, genomes, &census.alive);
-    generate_energy(grid, &census.generators);
-    transfer_energy_one_hop(grid, &census.transferable);
+    repair_energy_paths(grid, genomes, &census.alive, &config.life);
+    generate_energy(grid, &census.generators, &config.life);
+    transfer_energy_one_hop(grid, &census.transferable, &config.life);
     process_genomes(state, grid, genomes, config, &census.stems);
 }
 
@@ -268,6 +268,7 @@ fn update_maintenance_and_census(
     genomes: &mut GenomePool,
     next_soil_energy: &[f32],
     next_pollution: &[f32],
+    config: &LifeConfig,
 ) -> LifeCensus {
     debug_assert_eq!(next_soil_energy.len(), grid.len());
     debug_assert_eq!(next_pollution.len(), grid.len());
@@ -291,11 +292,11 @@ fn update_maintenance_and_census(
                 let mut dead = life.steps_to_death == 0;
                 if !dead {
                     life.steps_to_death -= 1;
-                    dead = (cell.soil.organics > MAX_ORGANIC_LIFE && life.ty != LifeType::Root)
-                        || (cell.soil.energy > MAX_ENERGY_LIFE && life.ty != LifeType::Reactor);
+                    dead = (cell.soil.organics > config.lethal_organics && life.ty != LifeType::Root)
+                        || (cell.soil.energy > config.lethal_soil_energy && life.ty != LifeType::Reactor);
                 }
                 if !dead {
-                    life.energy -= life.consumption();
+                    life.energy -= life.consumption(config);
                     dead = life.energy < 0.0;
                 }
 
@@ -318,7 +319,7 @@ fn update_maintenance_and_census(
         );
 
     for index in deaths {
-        kill_index(grid, index, genomes);
+        kill_index(grid, index, genomes, config);
     }
 
     census
@@ -328,6 +329,7 @@ fn repair_energy_paths(
     grid: &mut Grid<WorldCell>,
     genomes: &mut GenomePool,
     alive_indices: &[usize],
+    config: &LifeConfig,
 ) {
     #[derive(Clone, Copy)]
     struct PathPlan {
@@ -402,7 +404,7 @@ fn repair_energy_paths(
 
     for plan in plans {
         if plan.die {
-            kill_index(grid, plan.source, genomes);
+            kill_index(grid, plan.source, genomes, config);
         }
     }
 }
@@ -417,7 +419,7 @@ const fn direction_bit(dir: CellDir) -> u8 {
     }
 }
 
-fn generate_energy(grid: &mut Grid<WorldCell>, generator_indices: &[usize]) {
+fn generate_energy(grid: &mut Grid<WorldCell>, generator_indices: &[usize], config: &LifeConfig) {
     // Leaves need no arbitration and are kept as tiny sparse effects.
     let leaf_effects: Vec<GeneratorEffect> = generator_indices
         .par_iter()
@@ -427,7 +429,10 @@ fn generate_energy(grid: &mut Grid<WorldCell>, generator_indices: &[usize]) {
             };
             (life.ty == LifeType::Leaf).then(|| GeneratorEffect {
                 source,
-                energy_gain: 1.2 / (grid.cells()[source].air.pollution as f32 / 4.0).max(1.0),
+                energy_gain: config.generators.leaf.energy_per_tick
+                    / (grid.cells()[source].air.pollution as f32
+                        / config.generators.leaf.pollution_divisor)
+                        .max(1.0),
                 soil_output: 0.0,
                 pollution_output: 0.0,
             })
@@ -459,21 +464,29 @@ fn generate_energy(grid: &mut Grid<WorldCell>, generator_indices: &[usize]) {
                         let value = target.soil.organics;
                         if value == 0 {
                             0.0
-                        } else if value <= 8 {
-                            1.0
+                        } else if value <= config.generators.root.low_resource_threshold {
+                            config.generators.root.low_resource_take.min(value) as f32
                         } else {
-                            ((value as f32) * 0.16).floor().max(1.0)
+                            ((value as f32) * config.generators.root.extraction_fraction)
+                                .floor()
+                                .max(config.generators.root.low_resource_take as f32)
+                                .min(value as f32)
                         }
                     }
-                    GeneratorKind::Reactor => target.soil.energy * 0.16,
+                    GeneratorKind::Reactor => {
+                        target.soil.energy * config.generators.reactor.extraction_fraction
+                    }
                     GeneratorKind::Filter => {
                         let value = target.air.pollution;
                         if value == 0 {
                             0.0
-                        } else if value <= 8 {
-                            1.0
+                        } else if value <= config.generators.filter.low_resource_threshold {
+                            config.generators.filter.low_resource_take.min(value) as f32
                         } else {
-                            ((value as f32) * 0.16).floor().max(1.0)
+                            ((value as f32) * config.generators.filter.extraction_fraction)
+                                .floor()
+                                .max(config.generators.filter.low_resource_take as f32)
+                                .min(value as f32)
                         }
                     }
                 }
@@ -537,19 +550,19 @@ fn generate_energy(grid: &mut Grid<WorldCell>, generator_indices: &[usize]) {
             match plan.kind {
                 GeneratorKind::Root => GeneratorEffect {
                     source: plan.source,
-                    energy_gain: allocated * 0.6,
-                    soil_output: allocated * 0.2,
-                    pollution_output: allocated * 0.5,
+                    energy_gain: allocated * config.generators.root.energy_efficiency,
+                    soil_output: allocated * config.generators.root.soil_energy_output,
+                    pollution_output: allocated * config.generators.root.pollution_output,
                 },
                 GeneratorKind::Reactor => GeneratorEffect {
                     source: plan.source,
-                    energy_gain: allocated * 0.4,
+                    energy_gain: allocated * config.generators.reactor.energy_efficiency,
                     soil_output: 0.0,
                     pollution_output: 0.0,
                 },
                 GeneratorKind::Filter => GeneratorEffect {
                     source: plan.source,
-                    energy_gain: allocated * 0.5,
+                    energy_gain: allocated * config.generators.filter.energy_efficiency,
                     soil_output: 0.0,
                     pollution_output: 0.0,
                 },
@@ -609,7 +622,7 @@ fn demand_scale(available: f32, demand: f32) -> f32 {
     }
 }
 
-fn transfer_energy_one_hop(grid: &mut Grid<WorldCell>, transferable_indices: &[usize]) {
+fn transfer_energy_one_hop(grid: &mut Grid<WorldCell>, transferable_indices: &[usize], config: &LifeConfig) {
     let plans: Vec<EnergyPlan> = transferable_indices
         .par_iter()
         .filter_map(|&source| {
@@ -651,9 +664,13 @@ fn transfer_energy_one_hop(grid: &mut Grid<WorldCell>, transferable_indices: &[u
             let to_flow = if life.steps_to_death == 1 {
                 life.energy.max(0.0)
             } else {
-                (life.energy - 1.1 * life.consumption())
-                    .min(MAX_ENERGY_TRANSFER)
-                    .max(0.0)
+                let available = (life.energy
+                    - config.transfer.reserve_consumption_multiplier * life.consumption(config))
+                    .max(0.0);
+                match config.transfer.max_energy_per_tick {
+                    Some(cap) => available.min(cap),
+                    None => available,
+                }
             };
             let flow_each = to_flow / target_count as f32;
             let mut outgoing = [(0_usize, 0.0_f32); 4];
@@ -767,7 +784,7 @@ fn process_genomes(
             plan.collision_targets
                 .iter()
                 .copied()
-                .map(|target| (target, false, config.world.collision_damage as u32)),
+                .map(|(target, damage)| (target, false, damage as u32)),
         );
         external_effects.extend(
             plan.kill_targets
@@ -782,7 +799,7 @@ fn process_genomes(
     // delayed until all births/state changes are done so they cannot be overwritten.
     for plan in plans {
         if plan.die {
-            kill_index(grid, plan.source, genomes);
+            kill_index(grid, plan.source, genomes, &config.life);
             continue;
         }
 
@@ -821,7 +838,7 @@ fn process_genomes(
             };
 
             grid.cells_mut()[birth.target].life =
-                ty.make_newborn_cell(organism_id, birth.parent_dir, birth.lifespan);
+                ty.make_newborn_cell(organism_id, birth.parent_dir, birth.lifespan, &config.life);
             if child_is_fertile {
                 center.energy_to.set(birth.parent_dir.opposite(), true);
             }
@@ -877,10 +894,6 @@ fn build_genome_plan(
     let gene = genomes.get(handle).active_gene();
     let mut plan = GenomePlan::passive(source, handle, life.organism_id, life.energy);
 
-    if life.energy <= gene.energy_capacity() {
-        return plan;
-    }
-
     let mut next_active_gene = genomes.get(handle).active_gene;
     let mut local_energy = life.energy;
     let mut local_organics = LocalOrganics::from_grid(grid, source);
@@ -893,6 +906,7 @@ fn build_genome_plan(
         gene.main_action_condition,
         gene.main_action_param,
         step,
+        &config.life,
     ) {
         match collect_gene_action(
             gene.main_action,
@@ -902,10 +916,12 @@ fn build_genome_plan(
             &mut local_organics,
             &mut next_active_gene,
             &mut plan,
+            &config.life,
         ) {
             ActionFlow::Continue => {}
             ActionFlow::Wait => {
                 plan.energy_after = local_energy;
+                plan.active_gene_update = Some(next_active_gene);
                 return plan;
             }
             ActionFlow::Die => {
@@ -924,6 +940,7 @@ fn build_genome_plan(
         gene.additional_action_condition1,
         gene.additional_action_param1,
         step,
+        &config.life,
     );
     let condition_2 = check_gene_condition(
         grid,
@@ -933,6 +950,7 @@ fn build_genome_plan(
         gene.additional_action_condition2,
         gene.additional_action_param2,
         step,
+        &config.life,
     );
     let additional = match (condition_1, condition_2) {
         (true, true) => Some(gene.additional_action1),
@@ -949,10 +967,12 @@ fn build_genome_plan(
             &mut local_organics,
             &mut next_active_gene,
             &mut plan,
+            &config.life,
         ) {
             ActionFlow::Continue => {}
             ActionFlow::Wait => {
                 plan.energy_after = local_energy;
+                plan.active_gene_update = Some(next_active_gene);
                 return plan;
             }
             ActionFlow::Die => {
@@ -971,6 +991,7 @@ fn build_genome_plan(
         gene.condition_1,
         gene.param_1,
         step,
+        &config.life,
     );
     let condition_2 = check_gene_condition(
         grid,
@@ -980,6 +1001,7 @@ fn build_genome_plan(
         gene.condition_2,
         gene.param_2,
         step,
+        &config.life,
     );
     next_active_gene = match (condition_1, condition_2) {
         (true, true) => gene.alt_gene1,
@@ -989,7 +1011,7 @@ fn build_genome_plan(
     };
 
     let growth_gene = genomes.get(handle).get_gene(next_active_gene);
-    let total_energy = growth_gene.energy_capacity();
+    let total_energy = growth_gene.energy_capacity(&config.life.growth_energy);
     plan.active_gene_update = Some(next_active_gene);
 
     if local_energy <= total_energy {
@@ -1008,6 +1030,7 @@ fn build_genome_plan(
                 dir,
                 lifespan.0,
                 BirthKind::Leaf,
+                &config.life,
             ),
             GeneDirectionAction::MakeRoot(lifespan) => collect_birth_or_collision(
                 &mut plan,
@@ -1016,6 +1039,7 @@ fn build_genome_plan(
                 dir,
                 lifespan.0,
                 BirthKind::Root,
+                &config.life,
             ),
             GeneDirectionAction::MakeReactor(lifespan) => collect_birth_or_collision(
                 &mut plan,
@@ -1024,6 +1048,7 @@ fn build_genome_plan(
                 dir,
                 lifespan.0,
                 BirthKind::Reactor,
+                &config.life,
             ),
             GeneDirectionAction::MakeFilter(lifespan) => collect_birth_or_collision(
                 &mut plan,
@@ -1032,6 +1057,7 @@ fn build_genome_plan(
                 dir,
                 lifespan.0,
                 BirthKind::Filter,
+                &config.life,
             ),
             GeneDirectionAction::MultiplySelf(lifespan, child_gene) => {
                 let mut child_genome = *genomes.get(handle);
@@ -1046,6 +1072,7 @@ fn build_genome_plan(
                         genome: child_genome,
                         new_organism: false,
                     },
+                    &config.life,
                 );
             }
             GeneDirectionAction::CreateSeed(lifespan) => {
@@ -1062,11 +1089,12 @@ fn build_genome_plan(
                         genome: child_genome,
                         new_organism: true,
                     },
+                    &config.life,
                 );
             }
             GeneDirectionAction::KillCell => {
                 if let LifeCell::Alive(target_life) = grid.cells()[target].life {
-                    local_energy += target_life.energy.min(MAX_ENERGY_TRANSFER);
+                    local_energy += predation_energy_gain(target_life.energy, &config.life);
                     plan.kill_targets.push(target);
                 }
             }
@@ -1094,6 +1122,7 @@ fn collect_gene_action(
     local_organics: &mut LocalOrganics,
     next_active_gene: &mut GeneLocation,
     plan: &mut GenomePlan,
+    config: &LifeConfig,
 ) -> ActionFlow {
     use GeneAction::*;
 
@@ -1165,20 +1194,35 @@ fn collect_gene_action(
         ),
         DoNothing => {}
         ChangeActiveGene(gene) => *next_active_gene = gene,
-        KillUpLeft => collect_kill(grid.offset_index(center, -1, -1), grid, local_energy, plan),
-        KillUpRight => collect_kill(grid.offset_index(center, 1, -1), grid, local_energy, plan),
-        KillDownLeft => collect_kill(grid.offset_index(center, -1, 1), grid, local_energy, plan),
-        KillDownRight => collect_kill(grid.offset_index(center, 1, 1), grid, local_energy, plan),
+        KillUpLeft => collect_kill(grid.offset_index(center, -1, -1), grid, local_energy, plan, config),
+        KillUpRight => collect_kill(grid.offset_index(center, 1, -1), grid, local_energy, plan, config),
+        KillDownLeft => collect_kill(grid.offset_index(center, -1, 1), grid, local_energy, plan, config),
+        KillDownRight => collect_kill(grid.offset_index(center, 1, 1), grid, local_energy, plan, config),
         WaitStep => return ActionFlow::Wait,
         Die => return ActionFlow::Die,
     }
     ActionFlow::Continue
 }
 
-fn collect_kill(target: usize, grid: &Grid<WorldCell>, energy: &mut f32, plan: &mut GenomePlan) {
+fn collect_kill(
+    target: usize,
+    grid: &Grid<WorldCell>,
+    energy: &mut f32,
+    plan: &mut GenomePlan,
+    config: &LifeConfig,
+) {
     if let LifeCell::Alive(target_life) = grid.cells()[target].life {
-        *energy += target_life.energy.min(MAX_ENERGY_TRANSFER);
+        *energy += predation_energy_gain(target_life.energy, config);
         plan.kill_targets.push(target);
+    }
+}
+
+#[inline]
+fn predation_energy_gain(stored_energy: f32, config: &LifeConfig) -> f32 {
+    let stored_energy = stored_energy.max(0.0);
+    match config.predation.max_energy_gain {
+        Some(cap) => stored_energy.min(cap),
+        None => stored_energy,
     }
 }
 
@@ -1189,11 +1233,17 @@ fn collect_birth_or_collision(
     dir: CellDir,
     lifespan: u16,
     kind: BirthKind,
+    config: &LifeConfig,
 ) {
     match grid.cells()[target].life {
         LifeCell::Alive(target_life) => {
-            if target_life.organism_id != plan.organism_id {
-                plan.collision_targets.push(target);
+            let damage = if target_life.organism_id == plan.organism_id {
+                config.collision.self_damage
+            } else {
+                config.collision.foreign_damage
+            };
+            if damage != 0 {
+                plan.collision_targets.push((target, damage));
             }
         }
         LifeCell::Dead => plan.births.push(BirthRequest {
@@ -1223,6 +1273,7 @@ fn check_gene_condition(
     condition: GeneCondition,
     param: u8,
     step: usize,
+    config: &LifeConfig,
 ) -> bool {
     use GeneCondition::*;
 
@@ -1237,14 +1288,14 @@ fn check_gene_condition(
         LifeDown => cells[down].life.is_alive(),
         LifeLeft => cells[left].life.is_alive(),
         LifeRight => cells[right].life.is_alive(),
-        LethalOrganicUp => local_organics.up > MAX_ORGANIC_LIFE,
-        LethalOrganicDown => local_organics.down > MAX_ORGANIC_LIFE,
-        LethalOrganicLeft => local_organics.left > MAX_ORGANIC_LIFE,
-        LethalOrganicRight => local_organics.right > MAX_ORGANIC_LIFE,
-        LethalEnergyUp => cells[up].soil.energy > MAX_ENERGY_LIFE,
-        LethalEnergyDown => cells[down].soil.energy > MAX_ENERGY_LIFE,
-        LethalEnergyLeft => cells[left].soil.energy > MAX_ENERGY_LIFE,
-        LethalEnergyRight => cells[right].soil.energy > MAX_ENERGY_LIFE,
+        LethalOrganicUp => local_organics.up > config.lethal_organics,
+        LethalOrganicDown => local_organics.down > config.lethal_organics,
+        LethalOrganicLeft => local_organics.left > config.lethal_organics,
+        LethalOrganicRight => local_organics.right > config.lethal_organics,
+        LethalEnergyUp => cells[up].soil.energy > config.lethal_soil_energy,
+        LethalEnergyDown => cells[down].soil.energy > config.lethal_soil_energy,
+        LethalEnergyLeft => cells[left].soil.energy > config.lethal_soil_energy,
+        LethalEnergyRight => cells[right].soil.energy > config.lethal_soil_energy,
         RandomMT => rand::thread_rng().gen::<u8>() > param,
         LifeEnergyMT => life_energy > param as f32,
         OrganicCenterMT => local_organics.center > param,
@@ -1313,7 +1364,7 @@ fn move_organic(grid: &mut Grid<WorldCell>, movement: OrganicMove) {
     grid.cells_mut()[movement.to].soil.organics += amount;
 }
 
-fn kill_index(grid: &mut Grid<WorldCell>, index: usize, genomes: &mut GenomePool) {
+fn kill_index(grid: &mut Grid<WorldCell>, index: usize, genomes: &mut GenomePool, config: &LifeConfig) {
     let LifeCell::Alive(life) = grid.cells()[index].life else {
         return;
     };
@@ -1324,12 +1375,15 @@ fn kill_index(grid: &mut Grid<WorldCell>, index: usize, genomes: &mut GenomePool
 
     {
         let cell = &mut grid.cells_mut()[index];
-        cell.soil.organics = cell.soil.organics.saturating_add(life.organics());
-        cell.soil.energy += life.energy.max(0.0) * 0.5;
+        cell.soil.organics = cell.soil.organics.saturating_add(life.organics(config));
+        cell.soil.energy += life.energy.max(0.0) * config.death.energy_to_soil_fraction;
         cell.air.pollution = cell
             .air
             .pollution
-            .saturating_add((life.organics() / 2).max(1));
+            .saturating_add(
+                (life.organics(config) / config.death.pollution_per_organic_divisor)
+                    .max(config.death.minimum_pollution),
+            );
         cell.life = LifeCell::Dead;
     }
 
@@ -1376,6 +1430,103 @@ mod tests {
         cell
     }
 
+
+    #[test]
+    fn multiply_self_copies_genome_without_mutating_it() {
+        use crate::cells::life_cell::genome::{
+            GeneAction, GeneCondition, GeneDirectionAction, GeneLocation, LifeSpan,
+        };
+
+        let config = SimulationConfig::load();
+        let mut rng = rand::thread_rng();
+        let mut genome = Genome::random(&mut rng, &config.genetics);
+        let active = genome.active_gene;
+        let next_gene = GeneLocation((active.0 + 1) % crate::cells::life_cell::genome::MAX_GENES);
+        let gene = &mut genome.genes[active.0 as usize];
+        gene.up = GeneDirectionAction::Nothing;
+        gene.down = GeneDirectionAction::Nothing;
+        gene.left = GeneDirectionAction::Nothing;
+        gene.right = GeneDirectionAction::MultiplySelf(LifeSpan(100), next_gene);
+        gene.main_action_condition = GeneCondition::Never;
+        gene.additional_action_condition1 = GeneCondition::Never;
+        gene.additional_action_condition2 = GeneCondition::Never;
+        gene.condition_1 = GeneCondition::Never;
+        gene.condition_2 = GeneCondition::Never;
+        gene.main_action = GeneAction::DoNothing;
+
+        let mut genomes = GenomePool::new();
+        let handle = genomes.alloc(genome);
+        let mut grid = Grid::<WorldCell>::new(3, 3);
+        let source = 4;
+        let life = AliveCell::new(
+            LifeType::Stem(handle),
+            1,
+            100.0,
+            EnergyDirections::default(),
+            None,
+            100,
+        );
+        grid.cells_mut()[source].life = LifeCell::Alive(life);
+
+        let plan = build_genome_plan(source, life, handle, &grid, &genomes, 1, &config);
+        let child = plan
+            .births
+            .iter()
+            .find_map(|birth| match &birth.kind {
+                BirthKind::Stem { genome, new_organism: false } => Some(*genome),
+                _ => None,
+            })
+            .expect("MultiplySelf should produce a Stem birth request");
+
+        let mut expected = genome;
+        expected.active_gene = next_gene;
+        assert_eq!(child, expected);
+    }
+
+    #[test]
+    fn change_gene_then_wait_preserves_the_state_transition_even_without_growth_energy() {
+        use crate::cells::life_cell::genome::{
+            GeneAction, GeneCondition, GeneDirectionAction, GeneLocation, LifeSpan,
+        };
+
+        let config = SimulationConfig::load();
+        let mut rng = rand::thread_rng();
+        let mut genome = Genome::random(&mut rng, &config.genetics);
+        let active = genome.active_gene;
+        let next_gene = GeneLocation((active.0 + 1) % crate::cells::life_cell::genome::MAX_GENES);
+        let gene = &mut genome.genes[active.0 as usize];
+
+        // Deliberately make the current growth program expensive. State-machine
+        // actions must still execute before the selected growth gene is costed.
+        gene.up = GeneDirectionAction::MakeLeaf(LifeSpan(100));
+        gene.down = GeneDirectionAction::MakeLeaf(LifeSpan(100));
+        gene.left = GeneDirectionAction::MakeLeaf(LifeSpan(100));
+        gene.right = GeneDirectionAction::MakeLeaf(LifeSpan(100));
+        gene.main_action_condition = GeneCondition::Always;
+        gene.main_action = GeneAction::ChangeActiveGene(next_gene);
+        gene.additional_action_condition1 = GeneCondition::Always;
+        gene.additional_action_condition2 = GeneCondition::Never;
+        gene.additional_action2 = GeneAction::WaitStep;
+
+        let mut genomes = GenomePool::new();
+        let handle = genomes.alloc(genome);
+        let mut grid = Grid::<WorldCell>::new(3, 3);
+        let source = 4;
+        let life = AliveCell::new(
+            LifeType::Stem(handle),
+            1,
+            0.2,
+            EnergyDirections::default(),
+            None,
+            100,
+        );
+        grid.cells_mut()[source].life = LifeCell::Alive(life);
+
+        let plan = build_genome_plan(source, life, handle, &grid, &genomes, 1, &config);
+        assert_eq!(plan.active_gene_update, Some(next_gene));
+        assert!(plan.births.is_empty());
+    }
+
     #[test]
     fn energy_moves_at_most_one_cell_per_transfer_phase() {
         let mut grid = Grid::<WorldCell>::new(5, 1);
@@ -1388,7 +1539,8 @@ mod tests {
         grid.uset(1, 0, pipe(0.0, right));
         grid.uset(2, 0, pipe(0.0, EnergyDirections::default()));
 
-        transfer_energy_one_hop(&mut grid, &[0, 1]);
+        let config = SimulationConfig::load();
+        transfer_energy_one_hop(&mut grid, &[0, 1], &config.life);
 
         let LifeCell::Alive(b) = grid.uget(1, 0).life else {
             panic!("middle cell unexpectedly died");
@@ -1404,7 +1556,7 @@ mod tests {
             b.incoming_energy = 0.0;
             grid.uget_mut(1, 0).life = LifeCell::Alive(b);
         }
-        transfer_energy_one_hop(&mut grid, &[0, 1]);
+        transfer_energy_one_hop(&mut grid, &[0, 1], &config.life);
 
         let LifeCell::Alive(c) = grid.uget(2, 0).life else {
             panic!("last cell unexpectedly died");
