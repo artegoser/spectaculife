@@ -306,7 +306,7 @@ Render: {}  |  camera scale {:.2}  |  mip blend {:>3.0}%  |  fade {:.1}..{:.1}\n
 Layers: [O] organics {}   [L] life {}   [P] pollution {}   [S] soil energy {}   [D] energy paths {}\n\
 World: {}x{}   spawn spacing {}   initial soil {:.1}..{:.1}   soil diffusion {:.2}   air diffusion {:.2}\n\
 Life: leaf +{:.2}/tick   transfer cap {}   collision self/foreign {}/{}   seed {:.2}->{:.1} charge<={:.2}/tick\n\
-Genetics: somatic branching E={:.2}   seed burst {}/gene   somatic {:.3}%@rate100 x{}   lifespan {}..{}   initial mutation {}..{}%   mutation bounds {}..{}%\n\
+Genetics: frame={}   somatic branching E={:.2}   seed burst {}/gene   somatic {:.3}%@rate100 x{}   lifespan {}..{}   initial mutation {}..{}%   mutation bounds {}..{}%\n\
 Hotkeys: [Space] pause/resume   [N] single step   [I] reset   [O/L/P/S/D] layers   [H] HUD\n\
 Mouse: LMB/RMB drag   wheel zoom\n\
 Configs: simulation={}   render={}",
@@ -339,6 +339,7 @@ Configs: simulation={}   render={}",
         config.life.reproduction.seed_initial_energy,
         config.life.reproduction.seed_maturation_energy,
         config.life.reproduction.seed_max_charge_per_tick,
+        if config.genetics.relative_directions { "relative" } else { "absolute" },
         somatic_branching,
         config.genetics.seed_mutation.edits_per_affected_gene,
         config.genetics.somatic_mutation.chance_per_million as f32 / 10_000.0,

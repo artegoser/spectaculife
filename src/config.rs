@@ -170,6 +170,10 @@ pub struct FilterGeneratorConfig {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct GeneticsConfig {
+    /// Interpret genome Up/Down/Left/Right in the cell's body frame:
+    /// forward/back/left/right. This makes programs rotationally invariant.
+    pub relative_directions: bool,
+
     pub lifespan: U16Range,
     pub initial_mutation_rate: U8Range,
     pub mutation_rate_min: u8,

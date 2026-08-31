@@ -97,6 +97,10 @@ pub struct AliveCell {
     pub ty: LifeType,
     pub organism_id: u64,
 
+    /// Body-space forward direction. Genome cardinal slots are resolved around
+    /// this heading when genetics.relative_directions is enabled.
+    pub heading: CellDir,
+
     pub energy: f32,
     pub incoming_energy: f32,
     pub energy_to: EnergyDirections,
@@ -115,9 +119,17 @@ impl AliveCell {
         parent_dir: Option<CellDir>,
         steps_to_death: u16,
     ) -> Self {
+        let heading = match parent_dir {
+            // parent_dir points from the newborn back to its parent, so the
+            // newborn faces away from the parent along the growth direction.
+            Some(dir) => dir.opposite(),
+            None => Up,
+        };
+
         Self {
             ty,
             organism_id,
+            heading,
 
             energy,
             incoming_energy: 0.0,

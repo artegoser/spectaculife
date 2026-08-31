@@ -1032,6 +1032,8 @@ fn build_genome_plan(
         gene.main_action_condition,
         gene.main_action_param,
         step,
+        life.heading,
+        config.genetics.relative_directions,
         &config.life,
     ) {
         match collect_gene_action(
@@ -1042,6 +1044,8 @@ fn build_genome_plan(
             &mut local_organics,
             &mut next_active_gene,
             &mut plan,
+            life.heading,
+            config.genetics.relative_directions,
             &config.life,
         ) {
             ActionFlow::Continue => {}
@@ -1066,6 +1070,8 @@ fn build_genome_plan(
         gene.additional_action_condition1,
         gene.additional_action_param1,
         step,
+        life.heading,
+        config.genetics.relative_directions,
         &config.life,
     );
     let condition_2 = check_gene_condition(
@@ -1076,6 +1082,8 @@ fn build_genome_plan(
         gene.additional_action_condition2,
         gene.additional_action_param2,
         step,
+        life.heading,
+        config.genetics.relative_directions,
         &config.life,
     );
     let additional = match (condition_1, condition_2) {
@@ -1093,6 +1101,8 @@ fn build_genome_plan(
             &mut local_organics,
             &mut next_active_gene,
             &mut plan,
+            life.heading,
+            config.genetics.relative_directions,
             &config.life,
         ) {
             ActionFlow::Continue => {}
@@ -1117,6 +1127,8 @@ fn build_genome_plan(
         gene.condition_1,
         gene.param_1,
         step,
+        life.heading,
+        config.genetics.relative_directions,
         &config.life,
     );
     let condition_2 = check_gene_condition(
@@ -1127,6 +1139,8 @@ fn build_genome_plan(
         gene.condition_2,
         gene.param_2,
         step,
+        life.heading,
+        config.genetics.relative_directions,
         &config.life,
     );
     next_active_gene = match (condition_1, condition_2) {
@@ -1145,8 +1159,13 @@ fn build_genome_plan(
         return plan;
     }
 
-    for dir in CellDir::ALL {
-        let action = direction_action(&growth_gene, dir);
+    for local_dir in CellDir::ALL {
+        let action = direction_action(&growth_gene, local_dir);
+        let dir = resolve_genome_dir(
+            local_dir,
+            life.heading,
+            config.genetics.relative_directions,
+        );
         let target = neighbor_index(grid, source, dir);
         match action {
             GeneDirectionAction::MakeLeaf(lifespan) => collect_birth_or_collision(
@@ -1246,6 +1265,8 @@ fn collect_gene_action(
     local_organics: &mut LocalOrganics,
     next_active_gene: &mut GeneLocation,
     plan: &mut GenomePlan,
+    heading: CellDir,
+    relative_directions: bool,
     config: &LifeConfig,
 ) -> ActionFlow {
     use GeneAction::*;
@@ -1258,7 +1279,7 @@ fn collect_gene_action(
             source,
             local_organics,
             OrganicPos::Center,
-            OrganicPos::Direction(CellDir::Up),
+            OrganicPos::Direction(resolve_genome_dir(CellDir::Up, heading, relative_directions)),
         ),
         MoveOrganicDown => collect_organic_move(
             plan,
@@ -1266,7 +1287,7 @@ fn collect_gene_action(
             source,
             local_organics,
             OrganicPos::Center,
-            OrganicPos::Direction(CellDir::Down),
+            OrganicPos::Direction(resolve_genome_dir(CellDir::Down, heading, relative_directions)),
         ),
         MoveOrganicLeft => collect_organic_move(
             plan,
@@ -1274,7 +1295,7 @@ fn collect_gene_action(
             source,
             local_organics,
             OrganicPos::Center,
-            OrganicPos::Direction(CellDir::Left),
+            OrganicPos::Direction(resolve_genome_dir(CellDir::Left, heading, relative_directions)),
         ),
         MoveOrganicRight => collect_organic_move(
             plan,
@@ -1282,14 +1303,14 @@ fn collect_gene_action(
             source,
             local_organics,
             OrganicPos::Center,
-            OrganicPos::Direction(CellDir::Right),
+            OrganicPos::Direction(resolve_genome_dir(CellDir::Right, heading, relative_directions)),
         ),
         MoveOrganicFromUp => collect_organic_move(
             plan,
             grid,
             source,
             local_organics,
-            OrganicPos::Direction(CellDir::Up),
+            OrganicPos::Direction(resolve_genome_dir(CellDir::Up, heading, relative_directions)),
             OrganicPos::Center,
         ),
         MoveOrganicFromDown => collect_organic_move(
@@ -1297,7 +1318,7 @@ fn collect_gene_action(
             grid,
             source,
             local_organics,
-            OrganicPos::Direction(CellDir::Down),
+            OrganicPos::Direction(resolve_genome_dir(CellDir::Down, heading, relative_directions)),
             OrganicPos::Center,
         ),
         MoveOrganicFromLeft => collect_organic_move(
@@ -1305,7 +1326,7 @@ fn collect_gene_action(
             grid,
             source,
             local_organics,
-            OrganicPos::Direction(CellDir::Left),
+            OrganicPos::Direction(resolve_genome_dir(CellDir::Left, heading, relative_directions)),
             OrganicPos::Center,
         ),
         MoveOrganicFromRight => collect_organic_move(
@@ -1313,15 +1334,27 @@ fn collect_gene_action(
             grid,
             source,
             local_organics,
-            OrganicPos::Direction(CellDir::Right),
+            OrganicPos::Direction(resolve_genome_dir(CellDir::Right, heading, relative_directions)),
             OrganicPos::Center,
         ),
         DoNothing => {}
         ChangeActiveGene(gene) => *next_active_gene = gene,
-        KillUpLeft => collect_kill(grid.offset_index(center, -1, -1), grid, local_energy, plan, config),
-        KillUpRight => collect_kill(grid.offset_index(center, 1, -1), grid, local_energy, plan, config),
-        KillDownLeft => collect_kill(grid.offset_index(center, -1, 1), grid, local_energy, plan, config),
-        KillDownRight => collect_kill(grid.offset_index(center, 1, 1), grid, local_energy, plan, config),
+        KillUpLeft => {
+            let (dx, dy) = resolve_relative_offset(-1, -1, heading, relative_directions);
+            collect_kill(grid.offset_index(center, dx, dy), grid, local_energy, plan, config);
+        }
+        KillUpRight => {
+            let (dx, dy) = resolve_relative_offset(1, -1, heading, relative_directions);
+            collect_kill(grid.offset_index(center, dx, dy), grid, local_energy, plan, config);
+        }
+        KillDownLeft => {
+            let (dx, dy) = resolve_relative_offset(-1, 1, heading, relative_directions);
+            collect_kill(grid.offset_index(center, dx, dy), grid, local_energy, plan, config);
+        }
+        KillDownRight => {
+            let (dx, dy) = resolve_relative_offset(1, 1, heading, relative_directions);
+            collect_kill(grid.offset_index(center, dx, dy), grid, local_energy, plan, config);
+        }
         WaitStep => return ActionFlow::Wait,
         Die => return ActionFlow::Die,
     }
@@ -1380,6 +1413,33 @@ fn collect_birth_or_collision(
     }
 }
 
+#[inline(always)]
+fn resolve_genome_dir(local: CellDir, heading: CellDir, relative: bool) -> CellDir {
+    if relative {
+        heading.resolve_relative(local)
+    } else {
+        local
+    }
+}
+
+#[inline(always)]
+fn resolve_relative_offset(
+    dx: i64,
+    dy: i64,
+    heading: CellDir,
+    relative: bool,
+) -> (i64, i64) {
+    if !relative {
+        return (dx, dy);
+    }
+    match heading {
+        CellDir::Up => (dx, dy),
+        CellDir::Right => (-dy, dx),
+        CellDir::Down => (-dx, -dy),
+        CellDir::Left => (dy, -dx),
+    }
+}
+
 fn direction_action(gene: &crate::cells::life_cell::genome::Gene, dir: CellDir) -> GeneDirectionAction {
     match dir {
         CellDir::Up => gene.up,
@@ -1397,14 +1457,20 @@ fn check_gene_condition(
     condition: GeneCondition,
     param: u8,
     step: usize,
+    heading: CellDir,
+    relative_directions: bool,
     config: &LifeConfig,
 ) -> bool {
     use GeneCondition::*;
 
-    let up = neighbor_index(grid, source, CellDir::Up);
-    let down = neighbor_index(grid, source, CellDir::Down);
-    let left = neighbor_index(grid, source, CellDir::Left);
-    let right = neighbor_index(grid, source, CellDir::Right);
+    let up_dir = resolve_genome_dir(CellDir::Up, heading, relative_directions);
+    let down_dir = resolve_genome_dir(CellDir::Down, heading, relative_directions);
+    let left_dir = resolve_genome_dir(CellDir::Left, heading, relative_directions);
+    let right_dir = resolve_genome_dir(CellDir::Right, heading, relative_directions);
+    let up = neighbor_index(grid, source, up_dir);
+    let down = neighbor_index(grid, source, down_dir);
+    let left = neighbor_index(grid, source, left_dir);
+    let right = neighbor_index(grid, source, right_dir);
     let cells = grid.cells();
 
     match condition {
@@ -1412,10 +1478,10 @@ fn check_gene_condition(
         LifeDown => cells[down].life.is_alive(),
         LifeLeft => cells[left].life.is_alive(),
         LifeRight => cells[right].life.is_alive(),
-        LethalOrganicUp => local_organics.up > config.lethal_organics,
-        LethalOrganicDown => local_organics.down > config.lethal_organics,
-        LethalOrganicLeft => local_organics.left > config.lethal_organics,
-        LethalOrganicRight => local_organics.right > config.lethal_organics,
+        LethalOrganicUp => local_organics.get(OrganicPos::Direction(up_dir)) > config.lethal_organics,
+        LethalOrganicDown => local_organics.get(OrganicPos::Direction(down_dir)) > config.lethal_organics,
+        LethalOrganicLeft => local_organics.get(OrganicPos::Direction(left_dir)) > config.lethal_organics,
+        LethalOrganicRight => local_organics.get(OrganicPos::Direction(right_dir)) > config.lethal_organics,
         LethalEnergyUp => cells[up].soil.energy > config.lethal_soil_energy,
         LethalEnergyDown => cells[down].soil.energy > config.lethal_soil_energy,
         LethalEnergyLeft => cells[left].soil.energy > config.lethal_soil_energy,
@@ -1423,10 +1489,10 @@ fn check_gene_condition(
         RandomMT => rand::thread_rng().gen::<u8>() > param,
         LifeEnergyMT => life_energy > param as f32,
         OrganicCenterMT => local_organics.center > param,
-        OrganicUpMT => local_organics.up > param,
-        OrganicDownMT => local_organics.down > param,
-        OrganicLeftMT => local_organics.left > param,
-        OrganicRightMT => local_organics.right > param,
+        OrganicUpMT => local_organics.get(OrganicPos::Direction(up_dir)) > param,
+        OrganicDownMT => local_organics.get(OrganicPos::Direction(down_dir)) > param,
+        OrganicLeftMT => local_organics.get(OrganicPos::Direction(left_dir)) > param,
+        OrganicRightMT => local_organics.get(OrganicPos::Direction(right_dir)) > param,
         SoilEnergyCenterMT => cells[source].soil.energy > param as f32,
         SoilEnergyUpMT => cells[up].soil.energy > param as f32,
         SoilEnergyDownMT => cells[down].soil.energy > param as f32,
@@ -1556,6 +1622,111 @@ mod tests {
         cell
     }
 
+
+    #[test]
+    fn relative_direction_frame_rotates_with_the_growth_heading() {
+        let mut heading = CellDir::Up;
+        let expected = [CellDir::Left, CellDir::Down, CellDir::Right, CellDir::Up];
+        for next in expected {
+            heading = resolve_genome_dir(CellDir::Left, heading, true);
+            assert_eq!(heading, next);
+        }
+
+        // Absolute mode remains available for reproducibility/debugging.
+        assert_eq!(
+            resolve_genome_dir(CellDir::Left, CellDir::Down, false),
+            CellDir::Left
+        );
+    }
+
+    #[test]
+    fn self_loop_on_local_left_turns_the_growth_front() {
+        use crate::cells::life_cell::genome::{
+            GeneAction, GeneCondition, GeneDirectionAction, LifeSpan,
+        };
+
+        let mut config = SimulationConfig::load();
+        config.genetics.relative_directions = true;
+        config.genetics.somatic_mutation.chance_per_million = 0;
+
+        let mut rng = rand::thread_rng();
+        let mut genome = Genome::random(&mut rng, &config.genetics);
+        let active = genome.active_gene;
+        let gene = &mut genome.genes[active.0 as usize];
+        gene.up = GeneDirectionAction::Nothing;
+        gene.down = GeneDirectionAction::Nothing;
+        gene.left = GeneDirectionAction::MultiplySelf(LifeSpan(100), active);
+        gene.right = GeneDirectionAction::Nothing;
+        gene.main_action_condition = GeneCondition::Never;
+        gene.additional_action_condition1 = GeneCondition::Never;
+        gene.additional_action_condition2 = GeneCondition::Never;
+        gene.condition_1 = GeneCondition::Never;
+        gene.condition_2 = GeneCondition::Never;
+        gene.main_action = GeneAction::DoNothing;
+
+        let mut genomes = GenomePool::new();
+        let handle = genomes.alloc(genome);
+        let mut grid = Grid::<WorldCell>::new(5, 5);
+        let source = 12; // (2,2)
+        let mut life = AliveCell::new(
+            LifeType::Stem(handle),
+            1,
+            100.0,
+            EnergyDirections::default(),
+            None,
+            100,
+        );
+        life.heading = CellDir::Up;
+        grid.cells_mut()[source].life = LifeCell::Alive(life);
+
+        let first = build_genome_plan(source, life, handle, &grid, &genomes, 1, &config);
+        let first_birth = first.births.first().expect("local-left self-loop should grow");
+        assert_eq!(first_birth.target, grid.offset_index(source, -1, 0));
+        assert_eq!(first_birth.parent_dir, CellDir::Right);
+
+        let BirthKind::Stem { genome: child_genome } = &first_birth.kind else {
+            panic!("expected a Stem child");
+        };
+        let child_handle = genomes.alloc(*child_genome);
+        let child_source = first_birth.target;
+        let child = AliveCell::new(
+            LifeType::Stem(child_handle),
+            1,
+            100.0,
+            EnergyDirections::default(),
+            Some(first_birth.parent_dir),
+            100,
+        );
+        assert_eq!(child.heading, CellDir::Left);
+        grid.cells_mut()[source].life = LifeCell::Dead;
+        grid.cells_mut()[child_source].life = LifeCell::Alive(child);
+
+        let second = build_genome_plan(
+            child_source,
+            child,
+            child_handle,
+            &grid,
+            &genomes,
+            2,
+            &config,
+        );
+        let second_birth = second.births.first().expect("loop should turn again");
+        assert_eq!(second_birth.target, grid.offset_index(child_source, 0, 1));
+    }
+
+    #[test]
+    fn newborn_heading_faces_away_from_its_parent() {
+        let child = AliveCell::new(
+            LifeType::Pipe,
+            1,
+            1.0,
+            EnergyDirections::default(),
+            Some(CellDir::Right),
+            100,
+        );
+        // Parent is to the child's right, so the child grew leftwards.
+        assert_eq!(child.heading, CellDir::Left);
+    }
 
     #[test]
     fn multiply_self_copies_genome_without_mutating_it() {

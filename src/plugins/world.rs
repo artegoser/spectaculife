@@ -17,6 +17,7 @@ use super::overview::{
 use bevy::math::{uvec2, vec2, vec3};
 use bevy::prelude::*;
 use bevy_fast_tilemap::prelude::*;
+use rand::Rng;
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
     mpsc, Arc, Mutex, Weak,
@@ -235,14 +236,16 @@ fn populate_grid(
                 let organism_id = next_organism_id;
                 next_organism_id = next_organism_id.saturating_add(1);
 
-                cell.life = LifeCell::Alive(AliveCell::new(
+                let mut founder = AliveCell::new(
                     Stem(handle),
                     organism_id,
                     config.world.initial_stem_energy,
                     EnergyDirections::default(),
                     None,
                     config.world.initial_stem_lifespan,
-                ));
+                );
+                founder.heading = rng.gen();
+                cell.life = LifeCell::Alive(founder);
             }
         }
     }

@@ -15,7 +15,7 @@ pub enum CellDir {
 impl CellDir {
     pub const ALL: [CellDir; 4] = [CellDir::Up, CellDir::Down, CellDir::Left, CellDir::Right];
 
-    pub const fn opposite(&self) -> CellDir {
+    pub const fn opposite(self) -> CellDir {
         match self {
             CellDir::Up => CellDir::Down,
             CellDir::Down => CellDir::Up,
@@ -24,7 +24,36 @@ impl CellDir {
         }
     }
 
-    pub const fn offset(&self) -> (i64, i64) {
+    pub const fn turn_left(self) -> CellDir {
+        match self {
+            CellDir::Up => CellDir::Left,
+            CellDir::Left => CellDir::Down,
+            CellDir::Down => CellDir::Right,
+            CellDir::Right => CellDir::Up,
+        }
+    }
+
+    pub const fn turn_right(self) -> CellDir {
+        match self {
+            CellDir::Up => CellDir::Right,
+            CellDir::Right => CellDir::Down,
+            CellDir::Down => CellDir::Left,
+            CellDir::Left => CellDir::Up,
+        }
+    }
+
+    /// Resolve a genome-local cardinal slot into world space. In relative mode
+    /// Up/Down/Left/Right mean forward/back/left/right around the cell heading.
+    pub const fn resolve_relative(self, local: CellDir) -> CellDir {
+        match local {
+            CellDir::Up => self,
+            CellDir::Down => self.opposite(),
+            CellDir::Left => self.turn_left(),
+            CellDir::Right => self.turn_right(),
+        }
+    }
+
+    pub const fn offset(self) -> (i64, i64) {
         match self {
             CellDir::Up => (0, -1),
             CellDir::Down => (0, 1),

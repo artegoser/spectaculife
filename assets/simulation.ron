@@ -143,6 +143,11 @@
     ),
 
     genetics: (
+        // The genome is body-relative: Up=forward, Down=back, Left/Right are
+        // turns around the current Stem heading. A child faces in the direction
+        // it grew, so a one-gene left/self loop naturally makes a square.
+        relative_directions: true,
+
         lifespan: (min: 50, max: 1000),
 
         initial_mutation_rate: (min: 5, max: 100),
