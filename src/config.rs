@@ -9,6 +9,7 @@ pub const DEFAULT_CONFIG_PATH: &str = "assets/simulation.ron";
 pub struct SimulationConfig {
     pub world: WorldConfig,
     pub environment: EnvironmentConfig,
+    pub render: RenderConfig,
     pub genetics: GeneticsConfig,
 }
 
@@ -32,6 +33,15 @@ pub struct EnvironmentConfig {
     pub soil_diffusion: f32,
     pub air_diffusion: f32,
     pub soil_energy_render_max: f32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct RenderConfig {
+    /// Start fading the detailed tile renderer into the trilinear mipmapped
+    /// overview at this camera scale.
+    pub mip_lod_fade_start: f32,
+    /// At this scale the overview is fully active and detailed tiles are hidden.
+    pub mip_lod_fade_end: f32,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -280,6 +290,16 @@ impl SimulationConfig {
         }
         if self.environment.soil_energy_render_max <= 0.0 {
             return Err("environment.soil_energy_render_max must be > 0".into());
+        }
+        if !self.render.mip_lod_fade_start.is_finite()
+            || !self.render.mip_lod_fade_end.is_finite()
+            || self.render.mip_lod_fade_start <= 0.0
+            || self.render.mip_lod_fade_end <= self.render.mip_lod_fade_start
+        {
+            return Err(
+                "render mip LOD must satisfy 0 < mip_lod_fade_start < mip_lod_fade_end"
+                    .into(),
+            );
         }
 
         validate_u16_range("genetics.lifespan", self.genetics.lifespan)?;

@@ -6,20 +6,23 @@ use crate::cells::{
     WorldCell,
 };
 use crate::config::SimulationConfig;
-use crate::grid::{Area, Grid};
+use crate::grid::Grid;
 use crate::types::{Settings, State};
-use crate::update::{update_environment, update_world, EnvironmentBuffers};
+use crate::update::{update_simulation_step, SimulationBuffers};
 use crate::utils::get_map;
+use super::overview::{
+    create_overview_image, overview_blend, FarOverviewLayer, OverviewRenderer, OverviewSourceAssets,
+    CELL_WORLD_SIZE,
+};
 use bevy::math::{uvec2, vec2, vec3};
 use bevy::prelude::*;
 use bevy_fast_tilemap::prelude::*;
-use rand::seq::SliceRandom;
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    mpsc, Arc, Mutex,
+    atomic::{AtomicBool, AtomicU64, Ordering},
+    mpsc, Arc, Mutex, Weak,
 };
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 #[derive(Default)]
 pub struct WorldPlugin;
@@ -44,7 +47,7 @@ impl Plugin for WorldPlugin {
 
         app.add_plugins(FastTileMapPlugin::default())
             .add_systems(Startup, startup)
-            .add_systems(Update, receive_and_render)
+            .add_systems(Update, (receive_and_render, sync_render_lod_visibility).chain())
             .insert_resource(Grid::<WorldCell>::default())
             .insert_resource(Settings { w, h })
             .insert_resource(State::default());
@@ -53,10 +56,11 @@ impl Plugin for WorldPlugin {
 
 #[derive(Resource)]
 pub struct SimulationWorker {
-    receiver: Mutex<mpsc::Receiver<SimSnapshot>>,
+    latest_snapshot: Arc<Mutex<Option<SimSnapshot>>>,
     command_sender: Mutex<mpsc::Sender<SimCommand>>,
     paused: Arc<AtomicBool>,
     step_requested: Arc<AtomicBool>,
+    avg_tick_ns: Arc<AtomicU64>,
 }
 
 impl SimulationWorker {
@@ -70,6 +74,19 @@ impl SimulationWorker {
 
     pub fn reinitialize(&self) {
         let _ = self.command_sender.lock().unwrap().send(SimCommand::Reset);
+    }
+
+    pub fn average_tick_ms(&self) -> f64 {
+        self.avg_tick_ns.load(Ordering::Relaxed) as f64 / 1_000_000.0
+    }
+
+    pub fn ticks_per_second(&self) -> f64 {
+        let ns = self.avg_tick_ns.load(Ordering::Relaxed);
+        if ns == 0 {
+            0.0
+        } else {
+            1_000_000_000.0 / ns as f64
+        }
     }
 }
 
@@ -90,21 +107,25 @@ fn spawn_sim_thread(
     paused: Arc<AtomicBool>,
     step_requested: Arc<AtomicBool>,
     next_organism_id: u64,
-) -> (mpsc::Receiver<SimSnapshot>, mpsc::Sender<SimCommand>) {
-    let (snap_tx, snap_rx) = mpsc::channel();
+) -> (
+    Arc<Mutex<Option<SimSnapshot>>>,
+    mpsc::Sender<SimCommand>,
+    Arc<AtomicU64>,
+) {
+    let latest_snapshot = Arc::new(Mutex::new(None));
+    let snapshot_slot = Arc::downgrade(&latest_snapshot);
     let (cmd_tx, cmd_rx) = mpsc::channel();
+    let avg_tick_ns = Arc::new(AtomicU64::new(0));
+    let thread_avg_tick_ns = avg_tick_ns.clone();
 
     thread::spawn(move || {
         let mut grid = grid;
         let mut genomes = genomes;
         let mut step: usize = 0;
-        let mut shuffle_x: Vec<u32> = (0..settings.w).collect();
-        let mut shuffle_y: Vec<u32> = (0..settings.h).collect();
-        let mut rng = rand::thread_rng();
         let mut sim_state = State::default();
         sim_state.initialized = true;
         sim_state.next_organism_id = next_organism_id;
-        let mut environment_buffers = EnvironmentBuffers::new(&grid);
+        let mut simulation_buffers = SimulationBuffers::new(&grid);
 
         loop {
             let mut reset_happened = false;
@@ -117,20 +138,14 @@ fn spawn_sim_thread(
                             populate_grid(&mut grid, &mut genomes, &settings, &config);
                         step = 0;
                         sim_state.simulation_step = 0;
-                        environment_buffers = EnvironmentBuffers::new(&grid);
+                        simulation_buffers = SimulationBuffers::new(&grid);
+                        thread_avg_tick_ns.store(0, Ordering::Relaxed);
                         reset_happened = true;
                     }
                 }
             }
 
-            if reset_happened
-                && snap_tx
-                    .send(SimSnapshot {
-                        grid: grid.clone(),
-                        step,
-                    })
-                    .is_err()
-            {
+            if reset_happened && !publish_snapshot(&snapshot_slot, &grid, step, true) {
                 break;
             }
 
@@ -141,44 +156,57 @@ fn spawn_sim_thread(
                 continue;
             }
 
-            update_environment(&mut grid, &mut environment_buffers, &config);
-
-            shuffle_x.shuffle(&mut rng);
-            shuffle_y.shuffle(&mut rng);
-
-            for x in &shuffle_x {
-                for y in &shuffle_y {
-                    {
-                        let cell = grid.get_mut(*x as i64, *y as i64);
-                        if let LifeCell::Alive(ref mut life) = cell.life {
-                            if life.incoming_energy != 0.0 {
-                                life.energy += life.incoming_energy;
-                                life.incoming_energy = 0.0;
-                            }
-                        }
-                    }
-
-                    let mut area = Area::new(&mut grid as *mut _, *x, *y);
-                    update_world(&mut sim_state, &mut area, &mut genomes, &config);
-                }
-            }
+            let tick_started = Instant::now();
+            update_simulation_step(
+                &mut sim_state,
+                &mut grid,
+                &mut genomes,
+                &mut simulation_buffers,
+                &config,
+            );
 
             step += 1;
             sim_state.simulation_step = step;
 
-            if snap_tx
-                .send(SimSnapshot {
-                    grid: grid.clone(),
-                    step,
-                })
-                .is_err()
-            {
+            if !publish_snapshot(&snapshot_slot, &grid, step, false) {
                 break;
             }
+
+            let elapsed_ns = tick_started.elapsed().as_nanos().min(u64::MAX as u128) as u64;
+            let previous = thread_avg_tick_ns.load(Ordering::Relaxed);
+            let smoothed = if previous == 0 {
+                elapsed_ns
+            } else {
+                previous.saturating_mul(15) / 16 + elapsed_ns / 16
+            };
+            thread_avg_tick_ns.store(smoothed.max(1), Ordering::Relaxed);
         }
     });
 
-    (snap_rx, cmd_tx)
+    (latest_snapshot, cmd_tx, avg_tick_ns)
+}
+
+fn publish_snapshot(
+    snapshot_slot: &Weak<Mutex<Option<SimSnapshot>>>,
+    grid: &Grid<WorldCell>,
+    step: usize,
+    replace_pending: bool,
+) -> bool {
+    let Some(snapshot_slot) = snapshot_slot.upgrade() else {
+        return false;
+    };
+
+    let mut slot = snapshot_slot.lock().unwrap();
+    // The renderer is a one-slot mailbox. If it has not consumed the previous
+    // frame yet, do not clone another full 512x512 world just to overwrite it.
+    // Reset is the exception: it replaces a stale pending frame immediately.
+    if replace_pending || slot.is_none() {
+        *slot = Some(SimSnapshot {
+            grid: grid.clone(),
+            step,
+        });
+    }
+    true
 }
 
 fn populate_grid(
@@ -226,6 +254,7 @@ fn startup(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut materials: ResMut<Assets<Map>>,
+    mut images: ResMut<Assets<Image>>,
     mut world: ResMut<Grid<WorldCell>>,
     settings: Res<Settings>,
     config: Res<SimulationConfig>,
@@ -243,7 +272,7 @@ fn startup(
     let paused = Arc::new(AtomicBool::new(false));
     let step_requested = Arc::new(AtomicBool::new(false));
 
-    let (snap_rx, cmd_tx) = spawn_sim_thread(
+    let (latest_snapshot, cmd_tx, avg_tick_ns) = spawn_sim_thread(
         world.clone(),
         genomes,
         *settings,
@@ -254,42 +283,86 @@ fn startup(
     );
 
     commands.insert_resource(SimulationWorker {
-        receiver: Mutex::new(snap_rx),
+        latest_snapshot,
         command_sender: Mutex::new(cmd_tx),
         paused,
         step_requested,
+        avg_tick_ns,
     });
+
+    // The detailed renderer stays on bevy_fast_tilemap: each layer is already a single
+    // GPU quad. The life atlas is padded to a power-of-two width to avoid the precision
+    // seams that become visible at awkward zoom factors.
+    let life_texture = asset_server.load("life_pot.png");
+    let organics_texture = asset_server.load("organics.png");
+    let pollution_texture = asset_server.load("pollution.png");
+    let soil_energy_texture = asset_server.load("soil_energy.png");
+    let energy_directions_texture = asset_server.load("energy_directions.png");
 
     let cell_map = Map::builder(
         uvec2(settings.w, settings.h),
-        asset_server.load("life.png"),
+        life_texture.clone(),
         vec2(16., 16.),
     )
     .build();
     let organics_map = Map::builder(
         uvec2(settings.w, settings.h),
-        asset_server.load("organics.png"),
+        organics_texture.clone(),
         vec2(1., 1.),
     )
     .build();
     let pollution_map = Map::builder(
         uvec2(settings.w, settings.h),
-        asset_server.load("pollution.png"),
+        pollution_texture.clone(),
         vec2(1., 1.),
     )
     .build();
     let soil_energy_map = Map::builder(
         uvec2(settings.w, settings.h),
-        asset_server.load("soil_energy.png"),
+        soil_energy_texture.clone(),
         vec2(1., 1.),
     )
     .build();
     let energy_directions_map = Map::builder(
         uvec2(settings.w, settings.h),
-        asset_server.load("energy_directions.png"),
+        energy_directions_texture.clone(),
         vec2(16., 16.),
     )
     .build();
+
+    // At large zoom-out a tile-index renderer fundamentally undersamples the map: a
+    // screen pixel covers many cells but the shader still picks one cell. The far LOD
+    // is therefore a real mipmapped image of the composed world, not mipmaps of the
+    // atlas. This removes shimmer/moire and makes density visible at any distance.
+    let overview_image = images.add(create_overview_image(settings.w, settings.h));
+    commands.spawn((
+        SpriteBundle {
+            texture: overview_image.clone(),
+            sprite: Sprite {
+                custom_size: Some(vec2(
+                    settings.w as f32 * CELL_WORLD_SIZE,
+                    settings.h as f32 * CELL_WORLD_SIZE,
+                )),
+                ..default()
+            },
+            transform: Transform::from_translation(vec3(0.0, 0.0, 10.0)),
+            visibility: Visibility::Hidden,
+            ..default()
+        },
+        FarOverviewLayer,
+    ));
+    commands.insert_resource(OverviewRenderer::new(
+        overview_image,
+        OverviewSourceAssets {
+            life: life_texture,
+            organics: organics_texture,
+            pollution: pollution_texture,
+            soil_energy: soil_energy_texture,
+            energy_directions: energy_directions_texture,
+        },
+        settings.w,
+        settings.h,
+    ));
 
     commands.spawn((
         MapBundleManaged {
@@ -339,11 +412,14 @@ fn startup(
 
 fn receive_and_render(
     mut map_materials: ResMut<Assets<Map>>,
+    mut images: ResMut<Assets<Image>>,
+    mut overview: ResMut<OverviewRenderer>,
     organics_handle: Query<&Handle<Map>, With<OrganicsLayer>>,
     life_handle: Query<&Handle<Map>, With<LifeLayer>>,
     pollution_handle: Query<&Handle<Map>, With<PollutionLayer>>,
     soil_energy_handle: Query<&Handle<Map>, With<SoilEnergyLayer>>,
     energy_directions_handle: Query<&Handle<Map>, With<EnergyDirectionsLayer>>,
+    camera: Query<&Transform, With<Camera>>,
     mut world: ResMut<Grid<WorldCell>>,
     settings: Res<Settings>,
     config: Res<SimulationConfig>,
@@ -352,16 +428,33 @@ fn receive_and_render(
 ) {
     let Some(sim) = sim else { return };
 
-    let mut latest: Option<SimSnapshot> = None;
-    let receiver = sim.receiver.lock().unwrap();
-    while let Ok(snap) = receiver.try_recv() {
-        latest = Some(snap);
-    }
-    drop(receiver);
-
-    if let Some(snap) = latest {
+    if let Some(snap) = sim.latest_snapshot.lock().unwrap().take() {
         *world = snap.grid;
         state.simulation_step = snap.step;
+    }
+
+    let camera_scale = camera.iter().next().map(|t| t.scale.x).unwrap_or(1.0);
+    let mip_blend = overview_blend(
+        camera_scale,
+        config.render.mip_lod_fade_start,
+        config.render.mip_lod_fade_end,
+    );
+
+    // Build the composed world texture as soon as the smooth transition begins.
+    // Its sampler uses linear minification + linear mip filtering, so once this
+    // contribution becomes visible there is no nearest-neighbor shimmer.
+    if mip_blend > 0.0 && overview.needs_overview_rebuild(&state) {
+        overview.rebuild_overview(&world, &settings, &config, &state, &mut images);
+    }
+
+    // Once the transition has completed, detailed tile buffers no longer need
+    // to be refreshed. They are updated exactly once when zooming back into the
+    // blend/detail range.
+    if mip_blend >= 1.0 {
+        return;
+    }
+    if overview.last_precise_step == Some(state.simulation_step) {
+        return;
     }
 
     // Each map is selected by an explicit marker component. ECS iteration order
@@ -377,16 +470,17 @@ fn receive_and_render(
 
     for x in 0..settings.w {
         for y in 0..settings.h {
-            let area = Area::new(&mut *world, x, y);
+            let index = y as usize * settings.w as usize + x as usize;
+            let cell = &world.cells()[index];
 
-            let organics_texture = area.center.soil.organics as u32;
-            let life_texture = area.center.life.texture_id(&area);
-            let pollution_texture = area.center.air.pollution as u32;
-            let soil_energy_texture = ((area.center.soil.energy * 255.0
+            let organics_texture = cell.soil.organics as u32;
+            let life_texture = cell.life.texture_id(&world, index);
+            let pollution_texture = cell.air.pollution as u32;
+            let soil_energy_texture = ((cell.soil.energy * 255.0
                 / config.environment.soil_energy_render_max)
                 as u32)
                 .min(255);
-            let energy_directions_texture = area.center.life.energy_directions_texture_id();
+            let energy_directions_texture = cell.life.energy_directions_texture_id();
 
             if organics_map.at(x, y) != organics_texture {
                 organics_map.set(x, y, organics_texture);
@@ -403,6 +497,102 @@ fn receive_and_render(
             if energy_directions_map.at(x, y) != energy_directions_texture {
                 energy_directions_map.set(x, y, energy_directions_texture);
             }
+        }
+    }
+
+    overview.last_precise_step = Some(state.simulation_step);
+}
+
+fn sync_render_lod_visibility(
+    camera: Query<&Transform, With<Camera>>,
+    state: Res<State>,
+    config: Res<SimulationConfig>,
+    mut layers: ParamSet<(
+        Query<(&mut Visibility, &mut MapAttributes), With<OrganicsLayer>>,
+        Query<(&mut Visibility, &mut MapAttributes), With<LifeLayer>>,
+        Query<(&mut Visibility, &mut MapAttributes), With<PollutionLayer>>,
+        Query<(&mut Visibility, &mut MapAttributes), With<SoilEnergyLayer>>,
+        Query<(&mut Visibility, &mut MapAttributes), With<EnergyDirectionsLayer>>,
+        Query<(&mut Visibility, &mut Sprite), With<FarOverviewLayer>>,
+    )>,
+) {
+    let camera_scale = camera.iter().next().map(|t| t.scale.x).unwrap_or(1.0);
+    let mip_alpha = overview_blend(
+        camera_scale,
+        config.render.mip_lod_fade_start,
+        config.render.mip_lod_fade_end,
+    );
+    let detail_alpha = 1.0 - mip_alpha;
+
+    // Crossfade both renderers instead of flipping Visibility at one exact zoom.
+    // FastTileMap's shader multiplies its sampled tile color by MapAttributes::mix_color,
+    // so alpha here fades the complete detailed layer without changing tile data.
+    {
+        let mut query = layers.p0();
+        set_detail_layer(&mut query, state.organic_visible, detail_alpha);
+    }
+    {
+        let mut query = layers.p1();
+        set_detail_layer(&mut query, state.life_visible, detail_alpha);
+    }
+    {
+        let mut query = layers.p2();
+        set_detail_layer(&mut query, state.pollution_visible, detail_alpha);
+    }
+    {
+        let mut query = layers.p3();
+        set_detail_layer(&mut query, state.soil_energy_visible, detail_alpha);
+    }
+    {
+        let mut query = layers.p4();
+        set_detail_layer(&mut query, state.energy_directions_visible, detail_alpha);
+    }
+    {
+        let mut query = layers.p5();
+        for (mut visibility, mut sprite) in query.iter_mut() {
+            let visible = mip_alpha > 0.001;
+            let desired = if visible {
+                Visibility::Visible
+            } else {
+                Visibility::Hidden
+            };
+            if *visibility != desired {
+                *visibility = desired;
+            }
+
+            let desired_color = Color::srgba(1.0, 1.0, 1.0, mip_alpha);
+            if sprite.color != desired_color {
+                sprite.color = desired_color;
+            }
+        }
+    }
+}
+
+fn set_detail_layer<M: Component>(
+    query: &mut Query<(&mut Visibility, &mut MapAttributes), With<M>>,
+    enabled: bool,
+    alpha: f32,
+) {
+    let visible = enabled && alpha > 0.001;
+    let desired_visibility = if visible {
+        Visibility::Visible
+    } else {
+        Visibility::Hidden
+    };
+    let color = Vec4::new(1.0, 1.0, 1.0, alpha.clamp(0.0, 1.0));
+
+    for (mut visibility, mut attributes) in query.iter_mut() {
+        if *visibility != desired_visibility {
+            *visibility = desired_visibility;
+        }
+
+        // FastTileMap's managed mesh is a single triangle. Supplying one color
+        // per vertex keeps alpha spatially uniform and avoids a transition edge.
+        let needs_color = attributes.mix_color.len() != 3
+            || attributes.mix_color.iter().any(|existing| *existing != color);
+        if needs_color {
+            attributes.mix_color.clear();
+            attributes.mix_color.resize(3, color);
         }
     }
 }

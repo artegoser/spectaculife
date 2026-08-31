@@ -10,9 +10,9 @@ use crate::{
     types::State,
 };
 
-use super::world::{
-    EnergyDirectionsLayer, LifeLayer, OrganicsLayer, PollutionLayer, SimulationWorker,
-    SoilEnergyLayer,
+use super::{
+    overview::overview_blend,
+    world::{LifeLayer, SimulationWorker},
 };
 
 #[derive(Default)]
@@ -90,14 +90,7 @@ fn hud_button_input(
 fn apply_control_actions(
     mut actions: EventReader<ControlAction>,
     mut state: ResMut<State>,
-    mut layers: ParamSet<(
-        Query<&mut Visibility, With<OrganicsLayer>>,
-        Query<&mut Visibility, With<LifeLayer>>,
-        Query<&mut Visibility, With<PollutionLayer>>,
-        Query<&mut Visibility, With<SoilEnergyLayer>>,
-        Query<&mut Visibility, With<EnergyDirectionsLayer>>,
-        Query<&mut Visibility, With<HudRoot>>,
-    )>,
+    mut hud: Query<&mut Visibility, With<HudRoot>>,
     sim: Option<Res<SimulationWorker>>,
 ) {
     for action in actions.read().copied() {
@@ -121,33 +114,22 @@ fn apply_control_actions(
             }
             ControlAction::ToggleOrganics => {
                 state.organic_visible = !state.organic_visible;
-                let mut query = layers.p0();
-                set_visibility(&mut query, state.organic_visible);
             }
             ControlAction::ToggleLife => {
                 state.life_visible = !state.life_visible;
-                let mut query = layers.p1();
-                set_visibility(&mut query, state.life_visible);
             }
             ControlAction::TogglePollution => {
                 state.pollution_visible = !state.pollution_visible;
-                let mut query = layers.p2();
-                set_visibility(&mut query, state.pollution_visible);
             }
             ControlAction::ToggleSoilEnergy => {
                 state.soil_energy_visible = !state.soil_energy_visible;
-                let mut query = layers.p3();
-                set_visibility(&mut query, state.soil_energy_visible);
             }
             ControlAction::ToggleEnergyDirections => {
                 state.energy_directions_visible = !state.energy_directions_visible;
-                let mut query = layers.p4();
-                set_visibility(&mut query, state.energy_directions_visible);
             }
             ControlAction::ToggleHud => {
                 state.hud_visible = !state.hud_visible;
-                let mut query = layers.p5();
-                set_visibility(&mut query, state.hud_visible);
+                set_visibility(&mut hud, state.hud_visible);
             }
         }
     }
@@ -260,17 +242,39 @@ fn spawn_hud(mut commands: Commands) {
 fn update_hud(
     state: Res<State>,
     config: Res<SimulationConfig>,
+    sim: Option<Res<SimulationWorker>>,
+    camera: Query<&Transform, With<Camera>>,
     mut text_query: Query<&mut Text, With<HudText>>,
+    mut hud_frame: Local<u8>,
 ) {
-    if !state.is_changed() && !config.is_changed() {
+    *hud_frame = hud_frame.wrapping_add(1);
+    if *hud_frame & 7 != 0 {
         return;
     }
 
     let status = if state.paused { "PAUSED" } else { "RUNNING" };
     let on_off = |value: bool| if value { "on" } else { "off" };
+    let (tick_ms, ticks_per_second) = sim
+        .as_ref()
+        .map(|sim| (sim.average_tick_ms(), sim.ticks_per_second()))
+        .unwrap_or((0.0, 0.0));
+    let camera_scale = camera.iter().next().map(|t| t.scale.x).unwrap_or(1.0);
+    let mip_blend = overview_blend(
+        camera_scale,
+        config.render.mip_lod_fade_start,
+        config.render.mip_lod_fade_end,
+    );
+    let render_mode = if mip_blend <= 0.001 {
+        "tile detail"
+    } else if mip_blend >= 0.999 {
+        "trilinear mip"
+    } else {
+        "tile -> mip blend"
+    };
 
     let value = format!(
-        "Spectaculife  |  {status}  |  step {}  |  cursor {},{}\n\
+        "Spectaculife  |  {status}  |  step {}  |  {:.3} ms/tick  |  {:.1} ticks/s  |  cursor {},{}\n\
+Render: {}  |  camera scale {:.2}  |  mip blend {:>3.0}%  |  fade {:.1}..{:.1}\n\
 Layers: [O] organics {}   [L] life {}   [P] pollution {}   [S] soil energy {}   [D] energy paths {}\n\
 World: {}x{}   spawn spacing {}   initial soil {:.1}..{:.1}   soil diffusion {:.2}   air diffusion {:.2}\n\
 Genetics: lifespan {}..{}   initial mutation {}..{}%   mutation bounds {}..{}%\n\
@@ -278,8 +282,15 @@ Hotkeys: [Space] pause/resume   [N] single step   [I] reset   [O/L/P/S/D] layers
 Mouse: LMB/RMB drag   wheel zoom\n\
 Config: {}",
         state.simulation_step,
+        tick_ms,
+        ticks_per_second,
         state.cursor_position.x,
         state.cursor_position.y,
+        render_mode,
+        camera_scale,
+        mip_blend * 100.0,
+        config.render.mip_lod_fade_start,
+        config.render.mip_lod_fade_end,
         on_off(state.organic_visible),
         on_off(state.life_visible),
         on_off(state.pollution_visible),

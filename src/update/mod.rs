@@ -1,27 +1,24 @@
 use crate::{
-    cells::WorldCell,
+    cells::{life_cell::genome::GenomePool, WorldCell},
     config::SimulationConfig,
-    cells::life_cell::genome::GenomePool,
-    grid::{Area, Grid},
+    grid::Grid,
     types::State,
 };
 
-mod air;
+mod environment;
 mod life;
-mod soil;
 
-use air::update_air;
-use life::update_life;
-use soil::update_soil;
+use environment::compute_environment;
+use life::update_life_step;
 
-pub struct EnvironmentBuffers {
+pub struct SimulationBuffers {
     soil_energy: Vec<f32>,
     pollution: Vec<f32>,
 }
 
-impl EnvironmentBuffers {
+impl SimulationBuffers {
     pub fn new(grid: &Grid<WorldCell>) -> Self {
-        let len = grid.width as usize * grid.height as usize;
+        let len = grid.len();
         Self {
             soil_energy: vec![0.0; len],
             pollution: vec![0.0; len],
@@ -29,7 +26,7 @@ impl EnvironmentBuffers {
     }
 
     fn ensure_size(&mut self, grid: &Grid<WorldCell>) {
-        let len = grid.width as usize * grid.height as usize;
+        let len = grid.len();
         if self.soil_energy.len() != len {
             self.soil_energy.resize(len, 0.0);
             self.pollution.resize(len, 0.0);
@@ -37,32 +34,29 @@ impl EnvironmentBuffers {
     }
 }
 
-/// Diffuse the environment exactly once per simulation step using a read/write
-/// buffer. This removes order dependence and directional bias from the old
-/// in-place 3x3 averaging.
-pub fn update_environment(
+pub fn update_simulation_step(
+    state: &mut State,
     grid: &mut Grid<WorldCell>,
-    buffers: &mut EnvironmentBuffers,
+    genomes: &mut GenomePool,
+    buffers: &mut SimulationBuffers,
     config: &SimulationConfig,
 ) {
     buffers.ensure_size(grid);
-    update_soil(
+
+    compute_environment(
         grid,
         &mut buffers.soil_energy,
-        config.environment.soil_diffusion,
-    );
-    update_air(
-        grid,
         &mut buffers.pollution,
+        config.environment.soil_diffusion,
         config.environment.air_diffusion,
     );
-}
 
-pub fn update_world(
-    state: &mut State,
-    area: &mut Area<WorldCell>,
-    genomes: &mut GenomePool,
-    config: &SimulationConfig,
-) {
-    update_life(state, area, genomes, config);
+    update_life_step(
+        state,
+        grid,
+        genomes,
+        config,
+        &buffers.soil_energy,
+        &buffers.pollution,
+    );
 }

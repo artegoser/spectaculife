@@ -13,12 +13,23 @@ pub enum CellDir {
 }
 
 impl CellDir {
+    pub const ALL: [CellDir; 4] = [CellDir::Up, CellDir::Down, CellDir::Left, CellDir::Right];
+
     pub const fn opposite(&self) -> CellDir {
         match self {
             CellDir::Up => CellDir::Down,
             CellDir::Down => CellDir::Up,
             CellDir::Left => CellDir::Right,
             CellDir::Right => CellDir::Left,
+        }
+    }
+
+    pub const fn offset(&self) -> (i64, i64) {
+        match self {
+            CellDir::Up => (0, -1),
+            CellDir::Down => (0, 1),
+            CellDir::Left => (-1, 0),
+            CellDir::Right => (1, 0),
         }
     }
 }

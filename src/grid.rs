@@ -1,9 +1,6 @@
 use bevy::prelude::Resource;
 
-use crate::{
-    types::{CellDir, Coord, Settings},
-    utils::get_continual_coord,
-};
+use crate::utils::get_continual_coord;
 
 #[derive(Debug, Clone, Resource, Default)]
 pub struct Grid<T> {
@@ -61,88 +58,38 @@ impl<T: std::default::Default + std::clone::Clone> Grid<T> {
     }
 }
 
-#[derive(Debug, PartialEq)]
-pub struct Area<'a, T> {
-    pub up: &'a mut T,
-    pub down: &'a mut T,
-    pub left: &'a mut T,
-    pub right: &'a mut T,
-
-    pub up_left: &'a mut T,
-    pub up_right: &'a mut T,
-
-    pub down_left: &'a mut T,
-    pub down_right: &'a mut T,
-
-    pub center: &'a mut T,
-
-    pub x: u32,
-    pub y: u32,
-}
-
-impl<'a, T: std::default::Default + std::clone::Clone + std::marker::Copy> Area<'a, T> {
-    pub fn new(grid: *mut Grid<T>, x: u32, y: u32) -> Self {
-        unsafe {
-            Self {
-                up: (&mut *grid).get_mut(x as i64, y as i64 - 1),
-                left: (&mut *grid).get_mut(x as i64 - 1, y as i64),
-                center: (&mut *grid).uget_mut(x, y),
-                right: (&mut *grid).get_mut(x as i64 + 1, y as i64),
-                down: (&mut *grid).get_mut(x as i64, y as i64 + 1),
-
-                up_left: (&mut *grid).get_mut(x as i64 - 1, y as i64 - 1),
-                up_right: (&mut *grid).get_mut(x as i64 + 1, y as i64 - 1),
-
-                down_left: (&mut *grid).get_mut(x as i64 - 1, y as i64 + 1),
-                down_right: (&mut *grid).get_mut(x as i64 + 1, y as i64 + 1),
-
-                x,
-                y,
-            }
-        }
+impl<T> Grid<T> {
+    #[inline(always)]
+    pub fn len(&self) -> usize {
+        self.data.len()
     }
 
-    pub fn get_up_coord(&self, settings: &Settings) -> Coord {
-        Coord {
-            x: self.x,
-            y: get_continual_coord(self.y as i64 - 1, settings.h),
-        }
+    #[inline(always)]
+    pub fn cells(&self) -> &[T] {
+        &self.data
     }
 
-    pub fn get_down_coord(&self, settings: &Settings) -> Coord {
-        Coord {
-            x: self.x,
-            y: get_continual_coord(self.y as i64 + 1, settings.h),
-        }
+    #[inline(always)]
+    pub fn cells_mut(&mut self) -> &mut [T] {
+        &mut self.data
     }
 
-    pub fn get_left_coord(&self, settings: &Settings) -> Coord {
-        Coord {
-            x: get_continual_coord(self.x as i64 - 1, settings.w),
-            y: self.y,
-        }
+    #[inline(always)]
+    pub fn coords(&self, index: usize) -> (u32, u32) {
+        let width = self.width as usize;
+        ((index % width) as u32, (index / width) as u32)
     }
 
-    pub fn get_right_coord(&self, settings: &Settings) -> Coord {
-        Coord {
-            x: get_continual_coord(self.x as i64 + 1, settings.w),
-            y: self.y,
-        }
+    #[inline(always)]
+    pub fn wrapped_index(&self, x: i64, y: i64) -> usize {
+        let wx = get_continual_coord(x, self.width);
+        let wy = get_continual_coord(y, self.height);
+        wy as usize * self.width as usize + wx as usize
     }
 
-    pub fn get_center_coord(&self, _: &Settings) -> Coord {
-        Coord {
-            x: self.x,
-            y: self.y,
-        }
-    }
-
-    pub fn coord_from_dir(&self, dir: &CellDir, settings: &Settings) -> Coord {
-        match dir {
-            CellDir::Up => self.get_up_coord(settings),
-            CellDir::Down => self.get_down_coord(settings),
-            CellDir::Left => self.get_left_coord(settings),
-            CellDir::Right => self.get_right_coord(settings),
-        }
+    #[inline(always)]
+    pub fn offset_index(&self, index: usize, dx: i64, dy: i64) -> usize {
+        let (x, y) = self.coords(index);
+        self.wrapped_index(x as i64 + dx, y as i64 + dy)
     }
 }

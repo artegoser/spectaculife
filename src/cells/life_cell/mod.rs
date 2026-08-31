@@ -1,7 +1,7 @@
 use genome::GenomeHandle;
 
 use crate::{
-    grid::Area,
+    grid::Grid,
     types::CellDir::{self, *},
     utils::merge_energy,
 };
@@ -21,9 +21,9 @@ pub enum LifeCell {
 }
 
 impl LifeCell {
-    pub const fn texture_id(&self, area: &Area<WorldCell>) -> u32 {
+    pub fn texture_id(&self, grid: &Grid<WorldCell>, index: usize) -> u32 {
         match self {
-            Self::Alive(alive_life_cell) => alive_life_cell.texture_id(area),
+            Self::Alive(alive_life_cell) => alive_life_cell.texture_id(grid, index),
             Self::Dead => 16,
         }
     }
@@ -150,9 +150,9 @@ impl AliveCell {
         }
     }
 
-    pub const fn texture_id(&self, area: &Area<WorldCell>) -> u32 {
+    pub fn texture_id(&self, grid: &Grid<WorldCell>, index: usize) -> u32 {
         match self.ty {
-            LifeType::Pipe => match merge_energy(&area, self.energy_to).to_tuple() {
+            LifeType::Pipe => match merge_energy(grid, index, self.energy_to).to_tuple() {
                 (false, false, false, false) => 0,
                 (true, true, false, false) => 1,
                 (false, false, true, true) => 2,
@@ -391,6 +391,24 @@ impl EnergyDirections {
                 left: false,
                 right: true,
             },
+        }
+    }
+
+    pub const fn get(&self, dir: CellDir) -> bool {
+        match dir {
+            Up => self.up,
+            Down => self.down,
+            Left => self.left,
+            Right => self.right,
+        }
+    }
+
+    pub fn set(&mut self, dir: CellDir, value: bool) {
+        match dir {
+            Up => self.up = value,
+            Down => self.down = value,
+            Left => self.left = value,
+            Right => self.right = value,
         }
     }
 

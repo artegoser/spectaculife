@@ -27,6 +27,14 @@
         soil_energy_render_max: 32.0,
     ),
 
+    render: (
+        // Smoothly crossfade from exact tile sprites into the composed world
+        // texture before nearest-neighbor undersampling starts to shimmer.
+        // Interpolation is logarithmic in camera scale, matching exponential zoom.
+        mip_lod_fade_start: 4.0,
+        mip_lod_fade_end: 16.0,
+    ),
+
     genetics: (
         lifespan: (min: 50, max: 1000),
         initial_mutation_rate: (min: 1, max: 12),
