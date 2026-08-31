@@ -12,6 +12,7 @@ pub struct GenomeHandle(pub u32);
 pub struct GenomePool {
     genomes: Vec<Genome>,
     free_list: Vec<u32>,
+    allocated: Vec<bool>,
 }
 
 impl GenomePool {
@@ -19,30 +20,56 @@ impl GenomePool {
         Self {
             genomes: Vec::new(),
             free_list: Vec::new(),
+            allocated: Vec::new(),
         }
     }
 
     pub fn alloc(&mut self, genome: Genome) -> GenomeHandle {
         if let Some(idx) = self.free_list.pop() {
             self.genomes[idx as usize] = genome;
+            self.allocated[idx as usize] = true;
             GenomeHandle(idx)
         } else {
             let idx = self.genomes.len() as u32;
             self.genomes.push(genome);
+            self.allocated.push(true);
             GenomeHandle(idx)
         }
     }
 
     pub fn free(&mut self, handle: GenomeHandle) {
+        let idx = handle.0 as usize;
+        assert!(idx < self.genomes.len(), "invalid GenomeHandle {}", handle.0);
+
+        // A duplicate free used to put the same slot into free_list twice, after
+        // which two live Stem cells could receive the same genome slot. Keep the
+        // pool fail-safe even if a caller makes that mistake again.
+        if !self.allocated[idx] {
+            return;
+        }
+
+        self.allocated[idx] = false;
         self.free_list.push(handle.0);
     }
 
     pub fn get(&self, handle: GenomeHandle) -> &Genome {
-        &self.genomes[handle.0 as usize]
+        let idx = handle.0 as usize;
+        assert!(
+            self.allocated.get(idx).copied().unwrap_or(false),
+            "use of freed GenomeHandle {}",
+            handle.0
+        );
+        &self.genomes[idx]
     }
 
     pub fn get_mut(&mut self, handle: GenomeHandle) -> &mut Genome {
-        &mut self.genomes[handle.0 as usize]
+        let idx = handle.0 as usize;
+        assert!(
+            self.allocated.get(idx).copied().unwrap_or(false),
+            "use of freed GenomeHandle {}",
+            handle.0
+        );
+        &mut self.genomes[idx]
     }
 }
 
@@ -51,7 +78,7 @@ pub struct MutationRate(pub u8);
 
 impl Distribution<MutationRate> for Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> MutationRate {
-        MutationRate(rng.gen_range(5..=100))
+        MutationRate(rng.gen_range(1..=12))
     }
 }
 
@@ -69,7 +96,7 @@ pub struct LifeSpan(pub u16);
 
 impl Distribution<LifeSpan> for Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> LifeSpan {
-        LifeSpan(rng.gen_range(0..=1000))
+        LifeSpan(rng.gen_range(50..=1000))
     }
 }
 
@@ -86,80 +113,102 @@ impl Genome {
         self.get_gene(self.active_gene)
     }
 
-    const fn get_gene(&self, loc: GeneLocation) -> Gene {
+    pub const fn get_gene(&self, loc: GeneLocation) -> Gene {
         self.genes[loc.0 as usize]
     }
 
     pub fn mutate(&mut self) {
         let mut rng = thread_rng();
+        let rate = self.mutation_rate.0.clamp(1, 100) as u32;
 
-        if rng.gen_ratio(self.mutation_rate.0 as u32, 100) {
-            match rng.gen_range(0..=11) {
-                0 => self.mutation_rate = rng.gen(),
-                1 => self.active_gene = rng.gen(),
-                2 => self.seed_gene = rng.gen(),
-                _ => {
-                    for i in 0..MAX_GENES {
-                        if rng.gen_ratio(self.mutation_rate.0 as u32, 100) {
-                            for _ in 0..10 {
-                                let gene = self.genes.get_mut(i as usize).unwrap();
+        // Mutation happens only when a new seed is created. A successful event
+        // changes one (occasionally two) loci instead of repeatedly randomising
+        // large parts of the genome.
+        if !rng.gen_ratio(rate, 100) {
+            return;
+        }
 
-                                match rng.gen_range(0..=86) {
-                                    0..=7 => gene.up = rng.gen(),
-                                    8..=15 => gene.down = rng.gen(),
-                                    16..=23 => gene.left = rng.gen(),
-                                    24..=31 => gene.right = rng.gen(),
+        let edits = if rng.gen_ratio(rate.min(20), 100) { 2 } else { 1 };
+        for _ in 0..edits {
+            self.mutate_one(&mut rng);
+        }
 
-                                    32 => gene.condition_1 = rng.gen(),
-                                    33 => gene.param_1 = rng.gen(),
-
-                                    34 => gene.condition_2 = rng.gen(),
-                                    35 => gene.param_2 = rng.gen(),
-
-                                    36 => gene.alt_gene1 = rng.gen(),
-                                    37 => gene.alt_gene2 = rng.gen(),
-                                    38 => gene.alt_gene3 = rng.gen(),
-
-                                    39 => gene.additional_action_condition1 = rng.gen(),
-                                    40 => gene.additional_action_param1 = rng.gen(),
-
-                                    41 => gene.additional_action_condition2 = rng.gen(),
-                                    42 => gene.additional_action_param2 = rng.gen(),
-
-                                    43 => gene.additional_action1 = rng.gen(),
-                                    44 => gene.additional_action2 = rng.gen(),
-                                    45 => gene.additional_action3 = rng.gen(),
-
-                                    46 => gene.main_action = rng.gen(),
-                                    47 => gene.main_action_param = rng.gen(),
-                                    48 => gene.main_action_condition = rng.gen(),
-
-                                    49 => gene.self_lifespan = rng.gen(),
-
-                                    50..=52 => gene.up = gene.down,
-                                    53..=55 => gene.down = gene.up,
-                                    56..=58 => gene.left = gene.right,
-                                    59..=61 => gene.right = gene.left,
-
-                                    62..=64 => gene.up = gene.left,
-                                    65..=67 => gene.up = gene.right,
-
-                                    68..=70 => gene.down = gene.left,
-                                    71..=73 => gene.down = gene.right,
-
-                                    74..=76 => gene.left = gene.up,
-                                    77..=79 => gene.left = gene.down,
-
-                                    80..=82 => gene.right = gene.up,
-                                    83..=85 => gene.right = gene.down,
-
-                                    _ => *gene = rng.gen(),
-                                }
-                            }
-                        }
-                    }
-                }
+        // Let mutation rate itself evolve, but only gradually.
+        if rng.gen_ratio(1, 10) {
+            if rng.gen_bool(0.5) {
+                self.mutation_rate.0 = self.mutation_rate.0.saturating_add(1).min(25);
+            } else {
+                self.mutation_rate.0 = self.mutation_rate.0.saturating_sub(1).max(1);
             }
+        }
+    }
+
+    fn mutate_one<R: Rng + ?Sized>(&mut self, rng: &mut R) {
+        let mutation = rng.gen_range(0..=22);
+        if mutation == 22 {
+            self.seed_gene = rng.gen();
+            return;
+        }
+
+        let gene_idx = match rng.gen_range(0..4) {
+            0 => self.seed_gene.0 as usize,
+            1 => self.active_gene.0 as usize,
+            _ => rng.gen_range(0..MAX_GENES as usize),
+        };
+        let gene = &mut self.genes[gene_idx];
+
+        match mutation {
+            0 => gene.up = rng.gen(),
+            1 => gene.down = rng.gen(),
+            2 => gene.left = rng.gen(),
+            3 => gene.right = rng.gen(),
+
+            4 => {
+                gene.condition_1 = rng.gen();
+                gene.param_1 = gene.condition_1.random_param(rng);
+            }
+            5 => gene.param_1 = gene.condition_1.random_param(rng),
+            6 => {
+                gene.condition_2 = rng.gen();
+                gene.param_2 = gene.condition_2.random_param(rng);
+            }
+            7 => gene.param_2 = gene.condition_2.random_param(rng),
+
+            8 => gene.alt_gene1 = rng.gen(),
+            9 => gene.alt_gene2 = rng.gen(),
+            10 => gene.alt_gene3 = rng.gen(),
+
+            11 => {
+                gene.additional_action_condition1 = rng.gen();
+                gene.additional_action_param1 =
+                    gene.additional_action_condition1.random_param(rng);
+            }
+            12 => {
+                gene.additional_action_param1 =
+                    gene.additional_action_condition1.random_param(rng);
+            }
+            13 => {
+                gene.additional_action_condition2 = rng.gen();
+                gene.additional_action_param2 =
+                    gene.additional_action_condition2.random_param(rng);
+            }
+            14 => {
+                gene.additional_action_param2 =
+                    gene.additional_action_condition2.random_param(rng);
+            }
+
+            15 => gene.additional_action1 = rng.gen(),
+            16 => gene.additional_action2 = rng.gen(),
+            17 => gene.additional_action3 = rng.gen(),
+
+            18 => {
+                gene.main_action_condition = rng.gen();
+                gene.main_action_param = gene.main_action_condition.random_param(rng);
+            }
+            19 => gene.main_action_param = gene.main_action_condition.random_param(rng),
+            20 => gene.main_action = rng.gen(),
+            21 => gene.self_lifespan = rng.gen(),
+            _ => unreachable!(),
         }
     }
 }
@@ -221,31 +270,37 @@ impl Gene {
 
 impl Distribution<Gene> for Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Gene {
+        let main_action_condition: GeneCondition = rng.gen();
+        let additional_action_condition1: GeneCondition = rng.gen();
+        let additional_action_condition2: GeneCondition = rng.gen();
+        let condition_1: GeneCondition = rng.gen();
+        let condition_2: GeneCondition = rng.gen();
+
         Gene {
             up: rng.gen(),
             down: rng.gen(),
             left: rng.gen(),
             right: rng.gen(),
 
-            main_action_condition: rng.gen(),
-            main_action_param: rng.gen(),
+            main_action_condition,
+            main_action_param: main_action_condition.random_param(rng),
             main_action: rng.gen(),
 
-            additional_action_condition1: rng.gen(),
-            additional_action_param1: rng.gen(),
+            additional_action_condition1,
+            additional_action_param1: additional_action_condition1.random_param(rng),
 
-            additional_action_condition2: rng.gen(),
-            additional_action_param2: rng.gen(),
+            additional_action_condition2,
+            additional_action_param2: additional_action_condition2.random_param(rng),
 
             additional_action1: rng.gen(),
             additional_action2: rng.gen(),
             additional_action3: rng.gen(),
 
-            condition_1: rng.gen(),
-            param_1: rng.gen(),
+            condition_1,
+            param_1: condition_1.random_param(rng),
 
-            condition_2: rng.gen(),
-            param_2: rng.gen(),
+            condition_2,
+            param_2: condition_2.random_param(rng),
 
             alt_gene1: rng.gen(),
             alt_gene2: rng.gen(),
@@ -286,16 +341,17 @@ impl GeneDirectionAction {
 
 impl Distribution<GeneDirectionAction> for Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> GeneDirectionAction {
-        match rng.gen_range(0..=9) {
-            0 => GeneDirectionAction::MultiplySelf(rng.gen(), rng.gen()),
-            1 => GeneDirectionAction::MakeLeaf(rng.gen()),
-            2 => GeneDirectionAction::MakeRoot(rng.gen()),
-            3 => GeneDirectionAction::MakeReactor(rng.gen()),
-            4 => GeneDirectionAction::MakeFilter(rng.gen()),
-            5..=7 => GeneDirectionAction::KillCell,
-            8 => GeneDirectionAction::CreateSeed(rng.gen()),
-
-            _ => GeneDirectionAction::Nothing,
+        // A random genome must be supercritical often enough for selection to
+        // have something larger than a 2-3-cell dead end to work with.
+        match rng.gen_range(0..16) {
+            0..=5 => GeneDirectionAction::MultiplySelf(rng.gen(), rng.gen()),
+            6 => GeneDirectionAction::MakeLeaf(rng.gen()),
+            7 => GeneDirectionAction::MakeRoot(rng.gen()),
+            8 => GeneDirectionAction::MakeReactor(rng.gen()),
+            9 => GeneDirectionAction::MakeFilter(rng.gen()),
+            10 => GeneDirectionAction::CreateSeed(rng.gen()),
+            11..=14 => GeneDirectionAction::Nothing,
+            _ => GeneDirectionAction::KillCell,
         }
     }
 }
@@ -342,6 +398,29 @@ pub enum GeneCondition {
     Never,
 
     StepsDividesP,
+}
+
+impl GeneCondition {
+    fn random_param<R: Rng + ?Sized>(&self, rng: &mut R) -> u8 {
+        use GeneCondition::*;
+
+        match self {
+            LifeUp | LifeDown | LifeLeft | LifeRight
+            | LethalOrganicUp | LethalOrganicDown | LethalOrganicLeft | LethalOrganicRight
+            | LethalEnergyUp | LethalEnergyDown | LethalEnergyLeft | LethalEnergyRight
+            | Always | Never => 0,
+            RandomMT => rng.gen(),
+            LifeEnergyMT => rng.gen_range(0..=64),
+            OrganicCenterMT | OrganicUpMT | OrganicDownMT | OrganicLeftMT | OrganicRightMT => {
+                rng.gen_range(0..=16)
+            }
+            SoilEnergyCenterMT | SoilEnergyUpMT | SoilEnergyDownMT | SoilEnergyLeftMT
+            | SoilEnergyRightMT => rng.gen_range(0..=32),
+            AirPollutionCenterMT | AirPollutionUpMT | AirPollutionDownMT | AirPollutionLeftMT
+            | AirPollutionRightMT => rng.gen_range(0..=64),
+            StepsDividesP => rng.gen_range(1..=64),
+        }
+    }
 }
 
 impl Distribution<GeneCondition> for Standard {

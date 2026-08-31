@@ -65,7 +65,9 @@ pub fn update_life(state: &mut State, area: &mut Area<WorldCell>, genomes: &mut 
         // Process genome
         match life.ty {
             Stem(handle) => {
-                process_genome(state, area, &mut life, handle, genomes);
+                if !process_genome(state, area, &mut life, handle, genomes) {
+                    return;
+                }
             }
             _ => {}
         };
@@ -75,201 +77,248 @@ pub fn update_life(state: &mut State, area: &mut Area<WorldCell>, genomes: &mut 
 }
 
 fn process_genome(
-    state: &State,
+    state: &mut State,
     area: &mut Area<WorldCell>,
     life: &mut AliveCell,
     handle: GenomeHandle,
     genomes: &mut GenomePool,
-) {
+) -> bool {
     let gene_snapshot = genomes.get(handle).active_gene();
-    let total_energy = gene_snapshot.energy_capacity();
 
-    if life.energy > total_energy {
-        let mut birth_once = false;
-        let mut next_active_gene = genomes.get(handle).active_gene;
+    // Preserve the old energy gate for actions of the currently active gene.
+    if life.energy <= gene_snapshot.energy_capacity() {
+        return true;
+    }
 
-        macro_rules! try_birth {
-            ($dir: ident, $op_dir: ident, $cell_type: expr, $steps_to_death: expr) => {{
-                if let Alive(mut $dir) = area.$dir.life {
-                    $dir.steps_to_death = $dir.steps_to_death.saturating_sub(250);
-                    area.$dir.life = Alive($dir);
-                } else {
-                    if $cell_type.is_fertile() {
-                        life.energy_to.$dir = true;
-                    }
+    let mut birth_once = false;
+    let mut next_active_gene = genomes.get(handle).active_gene;
 
-                    area.$dir.life = $cell_type.make_newborn_cell($op_dir, $steps_to_death);
-
-                    birth_once = true;
+    macro_rules! collide_or_birth {
+        ($dir: ident, $op_dir: ident, $cell_type: expr, $steps_to_death: expr, $organism_id: expr) => {{
+            if let Alive(mut target) = area.$dir.life {
+                // Failed growth used to damage the organism's own tissue. Only
+                // competition with another organism causes collision damage.
+                if target.organism_id != life.organism_id {
+                    target.steps_to_death = target.steps_to_death.saturating_sub(250);
+                    area.$dir.life = Alive(target);
                 }
-            }};
-        }
-
-        macro_rules! kill_cell {
-            ($dir:ident) => {
-                if let Alive(mut $dir) = area.$dir.life {
-                    life.energy += $dir.energy.min(MAX_ENERGY_TRANSFER);
-
-                    $dir.steps_to_death = 0;
-
-                    area.$dir.life = Alive($dir);
+                false
+            } else {
+                if $cell_type.is_fertile() {
+                    life.energy_to.$dir = true;
                 }
-            };
-        }
 
-        macro_rules! direction_action {
-            ($dir: ident, $op_dir: ident) => {
-                match gene_snapshot.$dir {
-                    MakeLeaf(lifespan) => try_birth!($dir, $op_dir, Leaf, lifespan.0),
-                    MakeRoot(lifespan) => try_birth!($dir, $op_dir, Root, lifespan.0),
-                    MakeReactor(lifespan) => try_birth!($dir, $op_dir, Reactor, lifespan.0),
-                    MakeFilter(lifespan) => try_birth!($dir, $op_dir, Filter, lifespan.0),
-                    MultiplySelf(lifespan, next_gene) => {
-                        if area.$dir.life.is_alive() {
-                            if let Alive(mut d) = area.$dir.life {
-                                d.steps_to_death = d.steps_to_death.saturating_sub(250);
-                                area.$dir.life = Alive(d);
-                            }
-                        } else {
-                            let mut child_genome = *genomes.get(handle);
-                            child_genome.mutate();
-                            child_genome.active_gene = next_gene;
-                            let child_handle = genomes.alloc(child_genome);
-                            try_birth!($dir, $op_dir, Stem(child_handle), lifespan.0);
-                        }
-                    }
-                    CreateSeed(lifespan) => {
-                        if area.$dir.life.is_alive() {
-                            if let Alive(mut d) = area.$dir.life {
-                                d.steps_to_death = d.steps_to_death.saturating_sub(250);
-                                area.$dir.life = Alive(d);
-                            }
-                        } else {
-                            let mut child_genome = *genomes.get(handle);
-                            child_genome.mutate();
-                            child_genome.active_gene = child_genome.seed_gene;
-                            let child_handle = genomes.alloc(child_genome);
-                            try_birth!($dir, $op_dir, Stem(child_handle), lifespan.0);
-                        }
-                    }
-                    KillCell => kill_cell!($dir),
+                area.$dir.life = $cell_type.make_newborn_cell(
+                    $organism_id,
+                    $op_dir,
+                    $steps_to_death,
+                );
+                birth_once = true;
+                true
+            }
+        }};
+    }
 
-                    Nothing => {}
-                };
-            };
-        }
+    macro_rules! kill_cell {
+        ($dir:ident) => {
+            if let Alive(mut target) = area.$dir.life {
+                life.energy += target.energy.min(MAX_ENERGY_TRANSFER);
+                target.steps_to_death = 0;
+                area.$dir.life = Alive(target);
+            }
+        };
+    }
 
-        macro_rules! move_organic {
-            ($from: ident, $to: ident) => {{
-                let to_move = (255 - area.$to.soil.organics).min(area.$from.soil.organics);
-                area.$from.soil.organics -= to_move;
-                area.$to.soil.organics += to_move;
-            }};
-        }
+    macro_rules! move_organic {
+        ($from: ident, $to: ident) => {{
+            let to_move = (255 - area.$to.soil.organics).min(area.$from.soil.organics);
+            area.$from.soil.organics -= to_move;
+            area.$to.soil.organics += to_move;
+        }};
+    }
 
-        macro_rules! make_action {
-            ($action: ident) => {
-                match gene_snapshot.$action {
-                    MoveOrganicUp => move_organic!(center, up),
-                    MoveOrganicDown => move_organic!(center, down),
-                    MoveOrganicLeft => move_organic!(center, left),
-                    MoveOrganicRight => move_organic!(center, right),
+    macro_rules! make_action {
+        ($action: ident) => {
+            match gene_snapshot.$action {
+                MoveOrganicUp => move_organic!(center, up),
+                MoveOrganicDown => move_organic!(center, down),
+                MoveOrganicLeft => move_organic!(center, left),
+                MoveOrganicRight => move_organic!(center, right),
 
-                    MoveOrganicFromUp => move_organic!(up, center),
-                    MoveOrganicFromDown => move_organic!(down, center),
-                    MoveOrganicFromLeft => move_organic!(left, center),
-                    MoveOrganicFromRight => move_organic!(right, center),
+                MoveOrganicFromUp => move_organic!(up, center),
+                MoveOrganicFromDown => move_organic!(down, center),
+                MoveOrganicFromLeft => move_organic!(left, center),
+                MoveOrganicFromRight => move_organic!(right, center),
 
-                    DoNothing => {}
+                DoNothing => {}
 
-                    ChangeActiveGene(gene_location) => next_active_gene = gene_location,
+                ChangeActiveGene(gene_location) => next_active_gene = gene_location,
 
-                    KillUpLeft => kill_cell!(up_left),
-                    KillUpRight => kill_cell!(up_right),
-                    KillDownLeft => kill_cell!(down_left),
-                    KillDownRight => kill_cell!(down_right),
+                KillUpLeft => kill_cell!(up_left),
+                KillUpRight => kill_cell!(up_right),
+                KillDownLeft => kill_cell!(down_left),
+                KillDownRight => kill_cell!(down_right),
 
-                    WaitStep => return,
-                    Die => return kill(area, genomes),
+                WaitStep => return true,
+                Die => {
+                    // update_life works on a local copy. Synchronize it before
+                    // kill() so the cell stays dead and the genome is freed once.
+                    area.center.life = Alive(*life);
+                    kill(area, genomes);
+                    return false;
                 }
-            };
-        }
+            }
+        };
+    }
 
-        if check_gene_condition(
+    if check_gene_condition(
+        state,
+        area,
+        life,
+        gene_snapshot.main_action_condition,
+        gene_snapshot.main_action_param,
+    ) {
+        make_action!(main_action);
+    }
+
+    {
+        let condition_1 = check_gene_condition(
             state,
             area,
             life,
-            gene_snapshot.main_action_condition,
-            gene_snapshot.main_action_param,
-        ) {
-            make_action!(main_action);
+            gene_snapshot.additional_action_condition1,
+            gene_snapshot.additional_action_param1,
+        );
+
+        let condition_2 = check_gene_condition(
+            state,
+            area,
+            life,
+            gene_snapshot.additional_action_condition2,
+            gene_snapshot.additional_action_param2,
+        );
+
+        match (condition_1, condition_2) {
+            (true, true) => make_action!(additional_action1),
+            (true, false) => make_action!(additional_action2),
+            (false, true) => make_action!(additional_action3),
+            (false, false) => {}
         }
-
-        {
-            let condition_1 = check_gene_condition(
-                state,
-                area,
-                life,
-                gene_snapshot.additional_action_condition1,
-                gene_snapshot.additional_action_param1,
-            );
-
-            let condition_2 = check_gene_condition(
-                state,
-                area,
-                life,
-                gene_snapshot.additional_action_condition2,
-                gene_snapshot.additional_action_param2,
-            );
-
-            match (condition_1, condition_2) {
-                (true, true) => make_action!(additional_action1),
-                (true, false) => make_action!(additional_action2),
-                (false, true) => make_action!(additional_action3),
-                (false, false) => {}
-            }
-        }
-
-        {
-            let condition_1 = check_gene_condition(
-                state,
-                area,
-                life,
-                gene_snapshot.condition_1,
-                gene_snapshot.param_1,
-            );
-
-            let condition_2 = check_gene_condition(
-                state,
-                area,
-                life,
-                gene_snapshot.condition_2,
-                gene_snapshot.param_2,
-            );
-
-            match (condition_1, condition_2) {
-                (true, true) => next_active_gene = gene_snapshot.alt_gene1,
-                (true, false) => next_active_gene = gene_snapshot.alt_gene2,
-                (false, true) => next_active_gene = gene_snapshot.alt_gene3,
-                (false, false) => {}
-            };
-
-            cell_op_directions_enum!(direction_action);
-        }
-
-        // Apply gene switch for parent after all directional actions
-        genomes.get_mut(handle).active_gene = next_active_gene;
-
-        // Update parent
-        if birth_once {
-            let lifespan = genomes.get(handle).active_gene().self_lifespan.0;
-            genomes.free(handle);
-            life.ty = Pipe;
-            life.steps_to_death = lifespan;
-        }
-
-        life.energy -= total_energy;
     }
+
+    // Select the gene that is expressed *this* growth step. Previously the
+    // alternate gene was assigned to the parent only after it had already
+    // spawned children, and the parent then became Pipe, so conditions almost
+    // never influenced morphology.
+    {
+        let condition_1 = check_gene_condition(
+            state,
+            area,
+            life,
+            gene_snapshot.condition_1,
+            gene_snapshot.param_1,
+        );
+
+        let condition_2 = check_gene_condition(
+            state,
+            area,
+            life,
+            gene_snapshot.condition_2,
+            gene_snapshot.param_2,
+        );
+
+        match (condition_1, condition_2) {
+            (true, true) => next_active_gene = gene_snapshot.alt_gene1,
+            (true, false) => next_active_gene = gene_snapshot.alt_gene2,
+            (false, true) => next_active_gene = gene_snapshot.alt_gene3,
+            (false, false) => {}
+        }
+    }
+
+    let growth_gene_snapshot = genomes.get(handle).get_gene(next_active_gene);
+    let total_energy = growth_gene_snapshot.energy_capacity();
+
+    if life.energy <= total_energy {
+        genomes.get_mut(handle).active_gene = next_active_gene;
+        return true;
+    }
+
+    macro_rules! direction_action {
+        ($dir: ident, $op_dir: ident) => {
+            match growth_gene_snapshot.$dir {
+                MakeLeaf(lifespan) => {
+                    collide_or_birth!($dir, $op_dir, Leaf, lifespan.0, life.organism_id);
+                }
+                MakeRoot(lifespan) => {
+                    collide_or_birth!($dir, $op_dir, Root, lifespan.0, life.organism_id);
+                }
+                MakeReactor(lifespan) => {
+                    collide_or_birth!($dir, $op_dir, Reactor, lifespan.0, life.organism_id);
+                }
+                MakeFilter(lifespan) => {
+                    collide_or_birth!($dir, $op_dir, Filter, lifespan.0, life.organism_id);
+                }
+                MultiplySelf(lifespan, next_gene) => {
+                    if let Alive(mut target) = area.$dir.life {
+                        if target.organism_id != life.organism_id {
+                            target.steps_to_death = target.steps_to_death.saturating_sub(250);
+                            area.$dir.life = Alive(target);
+                        }
+                    } else {
+                        // Somatic growth inherits the genome exactly. Mutation is
+                        // reserved for CreateSeed, i.e. a new organism/generation.
+                        let mut child_genome = *genomes.get(handle);
+                        child_genome.active_gene = next_gene;
+                        let child_handle = genomes.alloc(child_genome);
+                        collide_or_birth!(
+                            $dir,
+                            $op_dir,
+                            Stem(child_handle),
+                            lifespan.0,
+                            life.organism_id
+                        );
+                    }
+                }
+                CreateSeed(lifespan) => {
+                    if let Alive(mut target) = area.$dir.life {
+                        if target.organism_id != life.organism_id {
+                            target.steps_to_death = target.steps_to_death.saturating_sub(250);
+                            area.$dir.life = Alive(target);
+                        }
+                    } else {
+                        let mut child_genome = *genomes.get(handle);
+                        child_genome.mutate();
+                        child_genome.active_gene = child_genome.seed_gene;
+                        let child_handle = genomes.alloc(child_genome);
+                        let child_organism_id = state.allocate_organism_id();
+                        collide_or_birth!(
+                            $dir,
+                            $op_dir,
+                            Stem(child_handle),
+                            lifespan.0,
+                            child_organism_id
+                        );
+                    }
+                }
+                KillCell => kill_cell!($dir),
+                Nothing => {}
+            };
+        };
+    }
+
+    cell_op_directions_enum!(direction_action);
+
+    let parent_lifespan = growth_gene_snapshot.self_lifespan.0;
+    if birth_once {
+        genomes.free(handle);
+        life.ty = Pipe;
+        life.steps_to_death = parent_lifespan;
+    } else {
+        genomes.get_mut(handle).active_gene = next_active_gene;
+    }
+
+    life.energy -= total_energy;
+    true
 }
 
 fn check_gene_condition(
@@ -381,9 +430,8 @@ fn generate_energy(area: &mut Area<WorldCell>, life: &mut AliveCell) {
                         area.$dir.air.pollution -= 1;
                         total += 1.;
                     } else {
-                        let pollution = (area.$dir.air.pollution as f32 * 0.16);
+                        let pollution = area.$dir.air.pollution as f32 * 0.16;
                         area.$dir.air.pollution -= pollution as u8;
-
                         total += pollution;
                     };
                 };

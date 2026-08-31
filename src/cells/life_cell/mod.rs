@@ -95,6 +95,7 @@ impl LifeCell {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AliveCell {
     pub ty: LifeType,
+    pub organism_id: u64,
 
     pub energy: f32,
     pub incoming_energy: f32,
@@ -108,6 +109,7 @@ pub struct AliveCell {
 impl AliveCell {
     pub const fn new(
         ty: LifeType,
+        organism_id: u64,
         energy: f32,
         energy_to: EnergyDirections,
         parent_dir: Option<CellDir>,
@@ -115,6 +117,7 @@ impl AliveCell {
     ) -> Self {
         Self {
             ty,
+            organism_id,
 
             energy,
             incoming_energy: 0.0,
@@ -325,7 +328,12 @@ impl LifeType {
         }
     }
 
-    pub fn make_newborn_cell(self, parent_dir: CellDir, steps_to_death: u16) -> LifeCell {
+    pub fn make_newborn_cell(
+        self,
+        organism_id: u64,
+        parent_dir: CellDir,
+        steps_to_death: u16,
+    ) -> LifeCell {
         let new_cell_energy_directions = if self.is_energy_generator() {
             EnergyDirections::from_direction(&parent_dir)
         } else {
@@ -339,6 +347,7 @@ impl LifeType {
 
         LifeCell::Alive(AliveCell::new(
             self,
+            organism_id,
             2. * self.consumption(),
             new_cell_energy_directions,
             Some(parent_dir),

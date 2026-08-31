@@ -45,7 +45,7 @@ impl<T: std::default::Default + std::clone::Clone> Grid<T> {
         &mut self.data[i]
     }
 
-    fn uget_mut<'a>(&'a mut self, x: u32, y: u32) -> &'a mut T {
+    pub(crate) fn uget_mut<'a>(&'a mut self, x: u32, y: u32) -> &'a mut T {
         let i = self.idx(x, y);
         &mut self.data[i]
     }

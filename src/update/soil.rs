@@ -1,27 +1,36 @@
-use crate::{cells::WorldCell, grid::Area};
+use crate::{cells::WorldCell, grid::Grid};
 
-pub fn update_soil(area: &mut Area<WorldCell>) {
-    let mut total: f32 = 0.;
+const SOIL_DIFFUSION: f32 = 0.18;
 
-    total += area.up_left.soil.energy;
-    total += area.up.soil.energy;
-    total += area.up_right.soil.energy;
-    total += area.left.soil.energy;
-    total += area.center.soil.energy;
-    total += area.right.soil.energy;
-    total += area.down_left.soil.energy;
-    total += area.down.soil.energy;
-    total += area.down_right.soil.energy;
+pub fn update_soil(grid: &mut Grid<WorldCell>, next: &mut [f32]) {
+    let width = grid.width;
+    let height = grid.height;
 
-    let foreach = total / 9.1;
+    for y in 0..height {
+        for x in 0..width {
+            let x = x as i64;
+            let y = y as i64;
+            let center = grid.get(x, y).soil.energy;
+            let neighbor_avg = (
+                grid.get(x - 1, y - 1).soil.energy
+                    + grid.get(x, y - 1).soil.energy
+                    + grid.get(x + 1, y - 1).soil.energy
+                    + grid.get(x - 1, y).soil.energy
+                    + grid.get(x + 1, y).soil.energy
+                    + grid.get(x - 1, y + 1).soil.energy
+                    + grid.get(x, y + 1).soil.energy
+                    + grid.get(x + 1, y + 1).soil.energy
+            ) / 8.0;
 
-    area.up_left.soil.energy = foreach;
-    area.up.soil.energy = foreach;
-    area.up_right.soil.energy = foreach;
-    area.left.soil.energy = foreach;
-    area.center.soil.energy = foreach;
-    area.right.soil.energy = foreach;
-    area.down_left.soil.energy = foreach;
-    area.down.soil.energy = foreach;
-    area.down_right.soil.energy = foreach;
+            let idx = y as usize * width as usize + x as usize;
+            next[idx] = center + (neighbor_avg - center) * SOIL_DIFFUSION;
+        }
+    }
+
+    for y in 0..height {
+        for x in 0..width {
+            let idx = y as usize * width as usize + x as usize;
+            grid.uget_mut(x, y).soil.energy = next[idx].max(0.0);
+        }
+    }
 }

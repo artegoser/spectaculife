@@ -8,12 +8,12 @@ use crate::cells::{
 };
 use crate::grid::{Area, Grid};
 use crate::types::{Settings, State};
-use crate::update::update_world;
+use crate::update::{update_environment, update_world, EnvironmentBuffers};
 use crate::utils::get_map;
 use bevy::math::{uvec2, vec2, vec3};
 use bevy::prelude::*;
 use bevy_fast_tilemap::prelude::*;
-use rand::seq::SliceRandom;
+use rand::{seq::SliceRandom, Rng};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     mpsc, Arc, Mutex,
@@ -76,6 +76,7 @@ fn spawn_sim_thread(
     settings: Settings,
     paused: Arc<AtomicBool>,
     step_requested: Arc<AtomicBool>,
+    next_organism_id: u64,
 ) -> (mpsc::Receiver<SimSnapshot>, mpsc::Sender<SimCommand>) {
     let (snap_tx, snap_rx) = mpsc::channel();
     let (cmd_tx, cmd_rx) = mpsc::channel();
@@ -89,6 +90,8 @@ fn spawn_sim_thread(
         let mut rng = rand::thread_rng();
         let mut sim_state = State::default();
         sim_state.initialized = true;
+        sim_state.next_organism_id = next_organism_id;
+        let mut environment_buffers = EnvironmentBuffers::new(&grid);
 
         loop {
             // Check for commands
@@ -99,6 +102,7 @@ fn spawn_sim_thread(
                         genomes = new_genomes;
                         step = 0;
                         sim_state.simulation_step = 0;
+                        sim_state.next_organism_id = find_next_organism_id(&grid);
                     }
                 }
             }
@@ -111,6 +115,10 @@ fn spawn_sim_thread(
                 thread::sleep(Duration::from_millis(1));
                 continue;
             }
+
+            // Diffuse environmental fields once from a stable snapshot before
+            // life updates mutate the world for this step.
+            update_environment(&mut grid, &mut environment_buffers);
 
             // Merged loop: incoming_energy + update in shuffled order
             shuffle_x.shuffle(&mut rng);
@@ -154,21 +162,48 @@ fn spawn_sim_thread(
     (snap_rx, cmd_tx)
 }
 
+fn find_next_organism_id(grid: &Grid<WorldCell>) -> u64 {
+    let mut max_id = 0_u64;
+    for x in 0..grid.width {
+        for y in 0..grid.height {
+            if let LifeCell::Alive(life) = grid.uget(x, y).life {
+                max_id = max_id.max(life.organism_id);
+            }
+        }
+    }
+    max_id.saturating_add(1).max(1)
+}
+
 fn populate_grid(
     grid: &mut Grid<WorldCell>,
     genomes: &mut GenomePool,
     settings: &Settings,
-) {
+) -> u64 {
+    let mut rng = rand::thread_rng();
+    let mut next_organism_id = 1_u64;
+
     for x in 0..settings.w {
         for y in 0..settings.h {
             let cell = grid.get_mut(x as i64, y as i64);
             *cell = WorldCell::default();
 
-            if x % 4 == 0 && y % 4 == 0 {
-                let genome: crate::cells::life_cell::genome::Genome = rand::random();
+            // Give environmental conditions an actual spatial signal from the
+            // first generation. Values stay below the lethal thresholds.
+            cell.soil.organics = rng.gen_range(0..=12);
+            cell.soil.energy = rng.gen_range(0.0..=24.0);
+            cell.air.pollution = rng.gen_range(0..=12);
+
+            // The old 4-cell spacing made large morphologies collide almost
+            // immediately. Leave enough room for a genome to express itself.
+            if x % 16 == 0 && y % 16 == 0 {
+                let genome: crate::cells::life_cell::genome::Genome = rng.gen();
                 let handle = genomes.alloc(genome);
+                let organism_id = next_organism_id;
+                next_organism_id = next_organism_id.saturating_add(1);
+
                 let life_cell = AliveCell::new(
                     Stem(handle),
+                    organism_id,
                     100.,
                     EnergyDirections::default(),
                     None,
@@ -178,6 +213,8 @@ fn populate_grid(
             }
         }
     }
+
+    next_organism_id
 }
 
 fn startup(
@@ -194,8 +231,9 @@ fn startup(
 
     // Initialize grid
     let mut genomes = GenomePool::new();
-    populate_grid(&mut world, &mut genomes, &settings);
+    let next_organism_id = populate_grid(&mut world, &mut genomes, &settings);
     state.initialized = true;
+    state.next_organism_id = next_organism_id;
 
     // Spawn simulation thread
     let paused = Arc::new(AtomicBool::new(false));
@@ -207,6 +245,7 @@ fn startup(
         *settings,
         paused.clone(),
         step_requested.clone(),
+        next_organism_id,
     );
 
     commands.insert_resource(SimulationWorker {

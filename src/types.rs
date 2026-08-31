@@ -25,7 +25,7 @@ impl CellDir {
 
 impl Distribution<CellDir> for Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> CellDir {
-        match rng.gen_range(0..=4) {
+        match rng.gen_range(0..4) {
             0 => CellDir::Up,
             1 => CellDir::Down,
             2 => CellDir::Left,
@@ -63,6 +63,8 @@ pub struct State {
     pub pollution_visible: bool,
 
     pub simulation_step: usize,
+
+    pub next_organism_id: u64,
 }
 
 impl Default for State {
@@ -77,6 +79,16 @@ impl Default for State {
             pollution_visible: true,
 
             simulation_step: 0,
+
+            next_organism_id: 1,
         }
+    }
+}
+
+impl State {
+    pub fn allocate_organism_id(&mut self) -> u64 {
+        let id = self.next_organism_id.max(1);
+        self.next_organism_id = id.saturating_add(1);
+        id
     }
 }
