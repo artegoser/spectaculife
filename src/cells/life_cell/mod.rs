@@ -194,6 +194,18 @@ impl AliveCell {
                     17
                 }
             }
+            LifeType::Seed(_) => {
+                if let Some(dir) = self.parent_dir {
+                    match dir {
+                        Up => 39,
+                        Down => 40,
+                        Left => 41,
+                        Right => 42,
+                    }
+                } else {
+                    38
+                }
+            }
             LifeType::Root => {
                 if let Some(dir) = self.parent_dir {
                     match dir {
@@ -245,6 +257,10 @@ impl AliveCell {
         self.ty.is_pipe()
     }
 
+    pub const fn is_seed(&self) -> bool {
+        self.ty.is_seed()
+    }
+
     pub const fn is_energy_generator(&self) -> bool {
         self.ty.is_energy_generator()
     }
@@ -263,6 +279,13 @@ impl AliveCell {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SeedState {
+    pub genome: GenomeHandle,
+    /// Lifespan the embryo Stem receives after the seed detaches.
+    pub stem_lifespan: u16,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum LifeType {
     Pipe,
     Leaf,
@@ -271,6 +294,7 @@ pub enum LifeType {
     Filter,
 
     Stem(GenomeHandle),
+    Seed(SeedState),
 }
 
 impl LifeType {
@@ -292,9 +316,16 @@ impl LifeType {
         }
     }
 
+    pub const fn is_seed(&self) -> bool {
+        match self {
+            LifeType::Seed(_) => true,
+            _ => false,
+        }
+    }
+
     pub const fn is_pipe_recipient(&self) -> bool {
         match self {
-            LifeType::Pipe | LifeType::Stem(_) => true,
+            LifeType::Pipe | LifeType::Stem(_) | LifeType::Seed(_) => true,
             _ => false,
         }
     }
@@ -311,6 +342,7 @@ impl LifeType {
             LifeType::Pipe => config.consumption.pipe,
             LifeType::Leaf => config.consumption.leaf,
             LifeType::Stem(_) => config.consumption.stem,
+            LifeType::Seed(_) => config.consumption.seed,
             LifeType::Root => config.consumption.root,
             LifeType::Reactor => config.consumption.reactor,
             LifeType::Filter => config.consumption.filter,
@@ -322,6 +354,7 @@ impl LifeType {
             LifeType::Pipe => config.organics.pipe,
             LifeType::Leaf => config.organics.leaf,
             LifeType::Stem(_) => config.organics.stem,
+            LifeType::Seed(_) => config.organics.seed,
             LifeType::Root => config.organics.root,
             LifeType::Reactor => config.organics.reactor,
             LifeType::Filter => config.organics.filter,
@@ -331,19 +364,13 @@ impl LifeType {
     pub fn make_newborn_cell(
         self,
         organism_id: u64,
-        parent_dir: CellDir,
+        parent_dir: Option<CellDir>,
         steps_to_death: u16,
         config: &LifeConfig,
     ) -> LifeCell {
-        let new_cell_energy_directions = if self.is_energy_generator() {
-            EnergyDirections::from_direction(&parent_dir)
-        } else {
-            EnergyDirections {
-                up: false,
-                down: false,
-                left: false,
-                right: false,
-            }
+        let new_cell_energy_directions = match (self.is_energy_generator(), parent_dir) {
+            (true, Some(dir)) => EnergyDirections::from_direction(&dir),
+            _ => EnergyDirections::default(),
         };
 
         LifeCell::Alive(AliveCell::new(
@@ -351,7 +378,7 @@ impl LifeType {
             organism_id,
             config.newborn_energy_consumption_multiplier * self.consumption(config),
             new_cell_energy_directions,
-            Some(parent_dir),
+            parent_dir,
             steps_to_death,
         ))
     }

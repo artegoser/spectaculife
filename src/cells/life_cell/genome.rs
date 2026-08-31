@@ -126,59 +126,113 @@ impl Genome {
         self.genes[loc.0 as usize]
     }
 
-    pub fn mutate(&mut self, config: &GeneticsConfig) {
+    /// Strong inherited mutation for a seed offspring.  This deliberately
+    /// mirrors the old "mutation burst" semantics: first the genome-level
+    /// mutation event must trigger, then every gene is independently selected
+    /// with the same mutation rate and receives several point edits.
+    pub fn mutate_seed(&mut self, config: &GeneticsConfig) -> bool {
         let mut rng = thread_rng();
+        self.active_gene = self.seed_gene;
+
         let rate = self
             .mutation_rate
             .0
             .clamp(config.mutation_rate_min, config.mutation_rate_max) as u32;
+        if rate == 0 || !rng.gen_ratio(rate, 100) {
+            return false;
+        }
 
-        if !rng.gen_ratio(rate, 100) {
+        let mut changed = false;
+        for gene_idx in 0..MAX_GENES as usize {
+            if !rng.gen_ratio(rate, 100) {
+                continue;
+            }
+            for _ in 0..config.seed_mutation.edits_per_affected_gene {
+                self.mutate_one(&mut rng, config, Some(gene_idx), true);
+                changed = true;
+            }
+        }
+
+        // SeedGene may have moved during the burst.  A seed always germinates
+        // from the final seed program.
+        self.active_gene = self.seed_gene;
+        self.maybe_evolve_mutation_rate(&mut rng, config);
+        changed
+    }
+
+    /// Rare local copy error on a MultiplySelf daughter.  It never mutates the
+    /// parent's genome and is intentionally tiny compared with seed mutation.
+    pub fn mutate_somatic(&mut self, config: &GeneticsConfig) -> bool {
+        let mut rng = thread_rng();
+        let rate = self
+            .mutation_rate
+            .0
+            .clamp(config.mutation_rate_min, config.mutation_rate_max) as u64;
+        let base = config.somatic_mutation.chance_per_million.min(1_000_000) as u64;
+        let chance = (base.saturating_mul(rate) / 100).min(1_000_000) as u32;
+        if chance == 0 || !rng.gen_ratio(chance, 1_000_000) {
+            return false;
+        }
+
+        for _ in 0..config.somatic_mutation.edits {
+            self.mutate_one(&mut rng, config, None, false);
+        }
+        true
+    }
+
+    fn maybe_evolve_mutation_rate<R: Rng + ?Sized>(
+        &mut self,
+        rng: &mut R,
+        config: &GeneticsConfig,
+    ) {
+        if !rng.gen_ratio(config.mutation_rate_evolution_chance_percent as u32, 100) {
             return;
         }
 
-        for _ in 0..config.mutation_edits_per_event {
-            self.mutate_one(&mut rng, config);
+        let total = config.mutation_rate_increase_weight as u64
+            + config.mutation_rate_decrease_weight as u64;
+        if total == 0 {
+            return;
         }
-
-        if rng.gen_ratio(
-            config.mutation_rate_evolution_chance_percent as u32,
-            100,
-        ) {
-            let total = config.mutation_rate_increase_weight as u64
-                + config.mutation_rate_decrease_weight as u64;
-            let increase = rng.gen_range(0..total) < config.mutation_rate_increase_weight as u64;
-
-            if increase {
-                self.mutation_rate.0 = self
-                    .mutation_rate
-                    .0
-                    .saturating_add(1)
-                    .min(config.mutation_rate_max);
-            } else {
-                self.mutation_rate.0 = self
-                    .mutation_rate
-                    .0
-                    .saturating_sub(1)
-                    .max(config.mutation_rate_min);
-            }
+        let increase = rng.gen_range(0..total) < config.mutation_rate_increase_weight as u64;
+        if increase {
+            self.mutation_rate.0 = self
+                .mutation_rate
+                .0
+                .saturating_add(1)
+                .min(config.mutation_rate_max);
+        } else {
+            self.mutation_rate.0 = self
+                .mutation_rate
+                .0
+                .saturating_sub(1)
+                .max(config.mutation_rate_min);
         }
     }
 
-    fn mutate_one<R: Rng + ?Sized>(&mut self, rng: &mut R, config: &GeneticsConfig) {
+    fn mutate_one<R: Rng + ?Sized>(
+        &mut self,
+        rng: &mut R,
+        config: &GeneticsConfig,
+        forced_gene: Option<usize>,
+        follow_seed_gene: bool,
+    ) {
         use MutationEditKind::*;
 
         let mutation = choose_weighted(&config.mutation_edits, rng);
         if matches!(mutation, SeedGene) {
             self.seed_gene = GeneLocation::random(rng);
+            if follow_seed_gene {
+                self.active_gene = self.seed_gene;
+            }
             return;
         }
 
-        let gene_idx = match choose_weighted(&config.mutation_gene_targets, rng) {
+        let gene_idx = forced_gene.unwrap_or_else(|| match choose_weighted(&config.mutation_gene_targets, rng) {
             MutationGeneTarget::SeedGene => self.seed_gene.0 as usize,
             MutationGeneTarget::ActiveGene => self.active_gene.0 as usize,
             MutationGeneTarget::RandomGene => rng.gen_range(0..MAX_GENES as usize),
-        };
+        });
         let gene = &mut self.genes[gene_idx];
 
         match mutation {
@@ -211,25 +265,17 @@ impl Genome {
 
             Condition1 => {
                 gene.condition_1 = GeneCondition::random(rng, config);
-                gene.param_1 = gene
-                    .condition_1
-                    .random_param(rng, &config.condition_params);
+                gene.param_1 = gene.condition_1.random_param(rng, &config.condition_params);
             }
             Condition1Param => {
-                gene.param_1 = gene
-                    .condition_1
-                    .random_param(rng, &config.condition_params)
+                gene.param_1 = gene.condition_1.random_param(rng, &config.condition_params)
             }
             Condition2 => {
                 gene.condition_2 = GeneCondition::random(rng, config);
-                gene.param_2 = gene
-                    .condition_2
-                    .random_param(rng, &config.condition_params);
+                gene.param_2 = gene.condition_2.random_param(rng, &config.condition_params);
             }
             Condition2Param => {
-                gene.param_2 = gene
-                    .condition_2
-                    .random_param(rng, &config.condition_params)
+                gene.param_2 = gene.condition_2.random_param(rng, &config.condition_params)
             }
 
             AltGene1 => gene.alt_gene1 = GeneLocation::random(rng),
@@ -280,6 +326,7 @@ impl Genome {
             SeedGene => unreachable!(),
         }
     }
+
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

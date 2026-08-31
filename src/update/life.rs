@@ -8,7 +8,7 @@ use crate::{
                 GeneAction, GeneCondition, GeneDirectionAction, GeneLocation, Genome, GenomeHandle,
                 GenomePool,
             },
-            AliveCell, EnergyDirections, LifeCell, LifeType,
+            AliveCell, EnergyDirections, LifeCell, LifeType, SeedState,
         },
         WorldCell,
     },
@@ -152,7 +152,8 @@ enum BirthKind {
     Root,
     Reactor,
     Filter,
-    Stem { genome: Genome, new_organism: bool },
+    Stem { genome: Genome },
+    Seed { genome: Genome },
 }
 
 #[derive(Debug, Clone)]
@@ -203,6 +204,7 @@ struct LifeCensus {
     generators: Vec<usize>,
     transferable: Vec<usize>,
     stems: Vec<usize>,
+    seeds: Vec<usize>,
 }
 
 impl LifeCensus {
@@ -217,6 +219,9 @@ impl LifeCensus {
         if life.is_fertile() {
             self.stems.push(index);
         }
+        if life.is_seed() {
+            self.seeds.push(index);
+        }
     }
 
     fn append(&mut self, mut other: Self) {
@@ -224,6 +229,7 @@ impl LifeCensus {
         self.generators.append(&mut other.generators);
         self.transferable.append(&mut other.transferable);
         self.stems.append(&mut other.stems);
+        self.seeds.append(&mut other.seeds);
     }
 }
 
@@ -254,6 +260,7 @@ pub fn update_life_step(
         next_pollution,
         &config.life,
     );
+    mature_seeds(state, grid, &census.seeds, &config.life);
     repair_energy_paths(grid, genomes, &census.alive, &config.life);
     generate_energy(grid, &census.generators, &config.life);
     transfer_energy_one_hop(grid, &census.transferable, &config.life);
@@ -325,6 +332,49 @@ fn update_maintenance_and_census(
     census
 }
 
+/// Germinate fully charged seeds.  Until this point the seed belongs to the
+/// parent's body and is fed through the parent's energy edge.  Maturation is
+/// the exact boundary where it becomes a new organism.
+fn mature_seeds(
+    state: &mut State,
+    grid: &mut Grid<WorldCell>,
+    seed_indices: &[usize],
+    config: &LifeConfig,
+) {
+    let mut ordered = seed_indices.to_vec();
+    ordered.sort_unstable();
+
+    for index in ordered {
+        let LifeCell::Alive(mut seed_life) = grid.cells()[index].life else {
+            continue;
+        };
+        let LifeType::Seed(seed) = seed_life.ty else {
+            continue;
+        };
+        if seed_life.energy < config.reproduction.seed_maturation_energy {
+            continue;
+        }
+
+        // Remove the parent's outgoing edge before the child starts living as
+        // an independent organism.  If the parent has already died, kill_index
+        // has cleared parent_dir and there is simply no edge left to remove.
+        if let Some(parent_dir) = seed_life.parent_dir {
+            let parent = neighbor_index(grid, index, parent_dir);
+            if let LifeCell::Alive(mut parent_life) = grid.cells()[parent].life {
+                parent_life.energy_to.set(parent_dir.opposite(), false);
+                grid.cells_mut()[parent].life = LifeCell::Alive(parent_life);
+            }
+        }
+
+        seed_life.ty = LifeType::Stem(seed.genome);
+        seed_life.organism_id = state.allocate_organism_id();
+        seed_life.parent_dir = None;
+        seed_life.energy_to = EnergyDirections::default();
+        seed_life.steps_to_death = seed.stem_lifespan;
+        grid.cells_mut()[index].life = LifeCell::Alive(seed_life);
+    }
+}
+
 fn repair_energy_paths(
     grid: &mut Grid<WorldCell>,
     genomes: &mut GenomePool,
@@ -344,7 +394,7 @@ fn repair_energy_paths(
             let LifeCell::Alive(life) = grid.cells()[index].life else {
                 return None;
             };
-            if life.energy_to.branches_amount() != 0 || life.is_fertile() {
+            if life.energy_to.branches_amount() != 0 || life.is_fertile() || life.is_seed() {
                 return None;
             }
 
@@ -636,6 +686,7 @@ fn transfer_energy_one_hop(grid: &mut Grid<WorldCell>, transferable_indices: &[u
 
             let mut directions = life.energy_to;
             let mut targets = [0_usize; 4];
+            let mut target_caps = [f32::INFINITY; 4];
             let mut target_count = 0_usize;
             for dir in CellDir::ALL {
                 if !life.energy_to.get(dir) {
@@ -645,6 +696,22 @@ fn transfer_energy_one_hop(grid: &mut Grid<WorldCell>, transferable_indices: &[u
                 match grid.cells()[target].life {
                     LifeCell::Alive(target_life) if target_life.is_pipe_recipient() => {
                         targets[target_count] = target;
+                        if target_life.is_seed() {
+                            // Incoming energy is delivered before the next maintenance
+                            // charge. Aim one maintenance above the maturation threshold
+                            // so the seed can actually cross it instead of asymptotically
+                            // topping up to threshold and immediately falling below it.
+                            target_caps[target_count] = config
+                                .reproduction
+                                .seed_max_charge_per_tick
+                                .max(0.0)
+                                .min(
+                                    (config.reproduction.seed_maturation_energy
+                                        + config.consumption.seed
+                                        - target_life.energy)
+                                        .max(0.0),
+                                );
+                        }
                         target_count += 1;
                     }
                     _ => directions.set(dir, false),
@@ -674,13 +741,17 @@ fn transfer_energy_one_hop(grid: &mut Grid<WorldCell>, transferable_indices: &[u
             };
             let flow_each = to_flow / target_count as f32;
             let mut outgoing = [(0_usize, 0.0_f32); 4];
+            let mut actual_flow = 0.0;
             for i in 0..target_count {
-                outgoing[i] = (targets[i], flow_each);
+                let amount = flow_each.min(target_caps[i]);
+                outgoing[i] = (targets[i], amount);
+                actual_flow += amount;
             }
 
             Some(EnergyPlan {
                 source,
-                energy_after: life.energy - to_flow,
+                // Energy a capped seed cannot accept stays in the source cell.
+                energy_after: life.energy - actual_flow,
                 directions_after: directions,
                 outgoing,
                 outgoing_len: target_count,
@@ -821,25 +892,80 @@ fn process_genomes(
                 continue;
             }
 
-            let child_is_fertile = matches!(&birth.kind, BirthKind::Stem { .. });
-            let (organism_id, ty) = match birth.kind {
-                BirthKind::Leaf => (plan.organism_id, LifeType::Leaf),
-                BirthKind::Root => (plan.organism_id, LifeType::Root),
-                BirthKind::Reactor => (plan.organism_id, LifeType::Reactor),
-                BirthKind::Filter => (plan.organism_id, LifeType::Filter),
-                BirthKind::Stem { genome, new_organism } => {
-                    let organism_id = if new_organism {
-                        state.allocate_organism_id()
-                    } else {
-                        plan.organism_id
-                    };
-                    (organism_id, LifeType::Stem(genomes.alloc(genome)))
-                }
-            };
+            let (organism_id, ty, parent_dir, initial_energy, connect_to_parent, lifespan) =
+                match birth.kind {
+                    BirthKind::Leaf => (
+                        plan.organism_id,
+                        LifeType::Leaf,
+                        Some(birth.parent_dir),
+                        None,
+                        false,
+                        birth.lifespan,
+                    ),
+                    BirthKind::Root => (
+                        plan.organism_id,
+                        LifeType::Root,
+                        Some(birth.parent_dir),
+                        None,
+                        false,
+                        birth.lifespan,
+                    ),
+                    BirthKind::Reactor => (
+                        plan.organism_id,
+                        LifeType::Reactor,
+                        Some(birth.parent_dir),
+                        None,
+                        false,
+                        birth.lifespan,
+                    ),
+                    BirthKind::Filter => (
+                        plan.organism_id,
+                        LifeType::Filter,
+                        Some(birth.parent_dir),
+                        None,
+                        false,
+                        birth.lifespan,
+                    ),
+                    BirthKind::Stem { genome } => (
+                        plan.organism_id,
+                        LifeType::Stem(genomes.alloc(genome)),
+                        Some(birth.parent_dir),
+                        None,
+                        true,
+                        birth.lifespan,
+                    ),
+                    BirthKind::Seed { genome } => (
+                        // A developing seed is still physically part of the
+                        // parent's body.  Its new organism id is allocated only
+                        // on maturation/detachment.
+                        plan.organism_id,
+                        LifeType::Seed(SeedState {
+                            genome: genomes.alloc(genome),
+                            stem_lifespan: birth.lifespan,
+                        }),
+                        Some(birth.parent_dir),
+                        Some(config.life.reproduction.seed_initial_energy),
+                        true,
+                        config.life.reproduction.seed_lifespan,
+                    ),
+                };
 
-            grid.cells_mut()[birth.target].life =
-                ty.make_newborn_cell(organism_id, birth.parent_dir, birth.lifespan, &config.life);
-            if child_is_fertile {
+            let mut child = ty.make_newborn_cell(
+                organism_id,
+                parent_dir,
+                lifespan,
+                &config.life,
+            );
+            if let Some(initial_energy) = initial_energy {
+                if let LifeCell::Alive(child_life) = &mut child {
+                    child_life.energy = initial_energy;
+                }
+            }
+            grid.cells_mut()[birth.target].life = child;
+
+            // Somatic growth and an immature seed both extend the parent's
+            // energy graph.  The seed edge is removed exactly at maturation.
+            if connect_to_parent {
                 center.energy_to.set(birth.parent_dir.opposite(), true);
             }
             birthed = true;
@@ -1062,33 +1188,31 @@ fn build_genome_plan(
             GeneDirectionAction::MultiplySelf(lifespan, child_gene) => {
                 let mut child_genome = *genomes.get(handle);
                 child_genome.active_gene = child_gene;
+                // A somatic copy is almost exact, but not mathematically perfect.
+                // Only the daughter is edited; the parent's genome is untouched.
+                child_genome.mutate_somatic(&config.genetics);
                 collect_birth_or_collision(
                     &mut plan,
                     grid,
                     target,
                     dir,
                     lifespan.0,
-                    BirthKind::Stem {
-                        genome: child_genome,
-                        new_organism: false,
-                    },
+                    BirthKind::Stem { genome: child_genome },
                     &config.life,
                 );
             }
             GeneDirectionAction::CreateSeed(lifespan) => {
                 let mut child_genome = *genomes.get(handle);
-                child_genome.mutate(&config.genetics);
-                child_genome.active_gene = child_genome.seed_gene;
+                // Seed mutation is the strong inherited mutation path.  The
+                // resulting genome is stored dormant until the seed matures.
+                child_genome.mutate_seed(&config.genetics);
                 collect_birth_or_collision(
                     &mut plan,
                     grid,
                     target,
                     dir,
                     lifespan.0,
-                    BirthKind::Stem {
-                        genome: child_genome,
-                        new_organism: true,
-                    },
+                    BirthKind::Seed { genome: child_genome },
                     &config.life,
                 );
             }
@@ -1369,8 +1493,10 @@ fn kill_index(grid: &mut Grid<WorldCell>, index: usize, genomes: &mut GenomePool
         return;
     };
 
-    if let LifeType::Stem(handle) = life.ty {
-        genomes.free(handle);
+    match life.ty {
+        LifeType::Stem(handle) => genomes.free(handle),
+        LifeType::Seed(seed) => genomes.free(seed.genome),
+        _ => {}
     }
 
     {
@@ -1437,7 +1563,8 @@ mod tests {
             GeneAction, GeneCondition, GeneDirectionAction, GeneLocation, LifeSpan,
         };
 
-        let config = SimulationConfig::load();
+        let mut config = SimulationConfig::load();
+        config.genetics.somatic_mutation.chance_per_million = 0;
         let mut rng = rand::thread_rng();
         let mut genome = Genome::random(&mut rng, &config.genetics);
         let active = genome.active_gene;
@@ -1473,7 +1600,7 @@ mod tests {
             .births
             .iter()
             .find_map(|birth| match &birth.kind {
-                BirthKind::Stem { genome, new_organism: false } => Some(*genome),
+                BirthKind::Stem { genome } => Some(*genome),
                 _ => None,
             })
             .expect("MultiplySelf should produce a Stem birth request");
@@ -1525,6 +1652,169 @@ mod tests {
         let plan = build_genome_plan(source, life, handle, &grid, &genomes, 1, &config);
         assert_eq!(plan.active_gene_update, Some(next_gene));
         assert!(plan.births.is_empty());
+    }
+
+
+    #[test]
+    fn create_seed_stays_attached_until_it_is_charged() {
+        use crate::cells::life_cell::genome::{
+            GeneAction, GeneCondition, GeneDirectionAction, LifeSpan,
+        };
+
+        let mut config = SimulationConfig::load();
+        // Make this test deterministic; mutation semantics are tested separately.
+        config.genetics.initial_mutation_rate.min = config.genetics.mutation_rate_min;
+        config.genetics.initial_mutation_rate.max = config.genetics.mutation_rate_min;
+
+        let mut rng = rand::thread_rng();
+        let mut genome = Genome::random(&mut rng, &config.genetics);
+        genome.mutation_rate.0 = config.genetics.mutation_rate_min;
+        let active = genome.active_gene;
+        let gene = &mut genome.genes[active.0 as usize];
+        gene.up = GeneDirectionAction::Nothing;
+        gene.down = GeneDirectionAction::Nothing;
+        gene.left = GeneDirectionAction::Nothing;
+        gene.right = GeneDirectionAction::CreateSeed(LifeSpan(100));
+        gene.main_action_condition = GeneCondition::Never;
+        gene.additional_action_condition1 = GeneCondition::Never;
+        gene.additional_action_condition2 = GeneCondition::Never;
+        gene.condition_1 = GeneCondition::Never;
+        gene.condition_2 = GeneCondition::Never;
+        gene.main_action = GeneAction::DoNothing;
+
+        let mut genomes = GenomePool::new();
+        let handle = genomes.alloc(genome);
+        let mut grid = Grid::<WorldCell>::new(3, 3);
+        let source = 4;
+        let target = 5;
+        grid.cells_mut()[source].life = LifeCell::Alive(AliveCell::new(
+            LifeType::Stem(handle),
+            7,
+            100.0,
+            EnergyDirections::default(),
+            None,
+            100,
+        ));
+
+        let mut state = State::default();
+        state.next_organism_id = 100;
+        process_genomes(&mut state, &mut grid, &mut genomes, &config, &[source]);
+
+        let LifeCell::Alive(parent) = grid.cells()[source].life else {
+            panic!("seed parent should remain as a Pipe");
+        };
+        assert_eq!(parent.ty, LifeType::Pipe);
+        assert!(parent.energy_to.right);
+
+        let LifeCell::Alive(seed) = grid.cells()[target].life else {
+            panic!("CreateSeed should create a seed");
+        };
+        assert!(matches!(seed.ty, LifeType::Seed(_)));
+        assert_eq!(seed.organism_id, 7);
+        assert_eq!(seed.parent_dir, Some(CellDir::Left));
+        assert_eq!(seed.steps_to_death, config.life.reproduction.seed_lifespan);
+        assert!((seed.energy - config.life.reproduction.seed_initial_energy).abs() < f32::EPSILON);
+        // No independent organism exists before maturation.
+        assert_eq!(state.next_organism_id, 100);
+    }
+
+    #[test]
+    fn charged_seed_detaches_and_becomes_a_new_organism() {
+        let config = SimulationConfig::load();
+        let mut rng = rand::thread_rng();
+        let genome = Genome::random(&mut rng, &config.genetics);
+        let mut genomes = GenomePool::new();
+        let handle = genomes.alloc(genome);
+
+        let mut grid = Grid::<WorldCell>::new(3, 1);
+        let parent = 1;
+        let seed_index = 2;
+        let mut parent_dirs = EnergyDirections::default();
+        parent_dirs.right = true;
+        grid.cells_mut()[parent].life = LifeCell::Alive(AliveCell::new(
+            LifeType::Pipe,
+            7,
+            10.0,
+            parent_dirs,
+            None,
+            100,
+        ));
+        grid.cells_mut()[seed_index].life = LifeCell::Alive(AliveCell::new(
+            LifeType::Seed(SeedState {
+                genome: handle,
+                stem_lifespan: 123,
+            }),
+            7,
+            config.life.reproduction.seed_maturation_energy,
+            EnergyDirections::default(),
+            Some(CellDir::Left),
+            config.life.reproduction.seed_lifespan,
+        ));
+
+        let mut state = State::default();
+        state.next_organism_id = 100;
+        mature_seeds(&mut state, &mut grid, &[seed_index], &config.life);
+
+        let LifeCell::Alive(parent) = grid.cells()[parent].life else {
+            panic!("parent unexpectedly died");
+        };
+        assert!(!parent.energy_to.right);
+
+        let LifeCell::Alive(child) = grid.cells()[seed_index].life else {
+            panic!("mature seed unexpectedly died");
+        };
+        assert_eq!(child.ty, LifeType::Stem(handle));
+        assert_eq!(child.organism_id, 100);
+        assert_eq!(child.parent_dir, None);
+        assert_eq!(child.steps_to_death, 123);
+        assert_eq!(state.next_organism_id, 101);
+    }
+
+    #[test]
+    fn seed_charge_is_capped_without_destroying_parent_energy() {
+        let config = SimulationConfig::load();
+        let mut rng = rand::thread_rng();
+        let genome = Genome::random(&mut rng, &config.genetics);
+        let mut genomes = GenomePool::new();
+        let handle = genomes.alloc(genome);
+
+        let mut grid = Grid::<WorldCell>::new(2, 1);
+        let mut right = EnergyDirections::default();
+        right.right = true;
+        grid.cells_mut()[0].life = LifeCell::Alive(AliveCell::new(
+            LifeType::Pipe,
+            1,
+            10.0,
+            right,
+            None,
+            100,
+        ));
+        grid.cells_mut()[1].life = LifeCell::Alive(AliveCell::new(
+            LifeType::Seed(SeedState {
+                genome: handle,
+                stem_lifespan: 100,
+            }),
+            1,
+            config.life.reproduction.seed_maturation_energy - 0.01,
+            EnergyDirections::default(),
+            Some(CellDir::Left),
+            config.life.reproduction.seed_lifespan,
+        ));
+
+        transfer_energy_one_hop(&mut grid, &[0], &config.life);
+
+        let LifeCell::Alive(parent) = grid.cells()[0].life else {
+            panic!("parent unexpectedly died");
+        };
+        let LifeCell::Alive(seed) = grid.cells()[1].life else {
+            panic!("seed unexpectedly died");
+        };
+        let charged = seed.incoming_energy;
+        assert!(charged > 0.0);
+        assert!(charged <= config.life.reproduction.seed_max_charge_per_tick + f32::EPSILON);
+        assert!((parent.energy - (10.0 - charged)).abs() < 1e-5);
+        let after_next_maintenance = seed.energy + charged - config.life.consumption.seed;
+        assert!(after_next_maintenance >= config.life.reproduction.seed_maturation_energy);
     }
 
     #[test]

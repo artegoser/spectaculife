@@ -49,6 +49,7 @@ pub struct LifeConfig {
     pub lethal_organics: u8,
     pub lethal_soil_energy: f32,
     pub newborn_energy_consumption_multiplier: f32,
+    pub reproduction: ReproductionConfig,
     pub transfer: TransferConfig,
     pub collision: CollisionConfig,
     pub predation: PredationConfig,
@@ -57,6 +58,18 @@ pub struct LifeConfig {
     pub organics: CellOrganicsConfig,
     pub growth_energy: GrowthEnergyConfig,
     pub generators: GeneratorConfig,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ReproductionConfig {
+    /// Energy placed into a newly constructed, still-attached seed.
+    pub seed_initial_energy: f32,
+    /// Stored energy required before an attached seed becomes an independent Stem.
+    pub seed_maturation_energy: f32,
+    /// Maximum energy an attached seed can accept from its parent per tick.
+    pub seed_max_charge_per_tick: f32,
+    /// Maximum time an attached seed can wait for maturation.
+    pub seed_lifespan: u16,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -90,6 +103,7 @@ pub struct CellConsumptionConfig {
     pub pipe: f32,
     pub leaf: f32,
     pub stem: f32,
+    pub seed: f32,
     pub root: f32,
     pub reactor: f32,
     pub filter: f32,
@@ -100,6 +114,7 @@ pub struct CellOrganicsConfig {
     pub pipe: u8,
     pub leaf: u8,
     pub stem: u8,
+    pub seed: u8,
     pub root: u8,
     pub reactor: u8,
     pub filter: u8,
@@ -160,8 +175,10 @@ pub struct GeneticsConfig {
     pub mutation_rate_min: u8,
     pub mutation_rate_max: u8,
 
-    /// Number of individual edits applied when a seed mutation event triggers.
-    pub mutation_edits_per_event: u16,
+    /// Strong inherited mutation performed only when CreateSeed constructs a seed.
+    pub seed_mutation: SeedMutationConfig,
+    /// Rare local copy errors on a MultiplySelf daughter.
+    pub somatic_mutation: SomaticMutationConfig,
     pub mutation_rate_evolution_chance_percent: u8,
     pub mutation_rate_increase_weight: u32,
     pub mutation_rate_decrease_weight: u32,
@@ -173,6 +190,21 @@ pub struct GeneticsConfig {
     pub mutation_edits: Vec<Weighted<MutationEditKind>>,
 
     pub condition_params: ConditionParamConfig,
+}
+
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SeedMutationConfig {
+    /// Number of point edits made to each gene selected by the genome mutation rate.
+    pub edits_per_affected_gene: u16,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SomaticMutationConfig {
+    /// Base chance per million MultiplySelf copies at mutation_rate=100.
+    /// The actual chance is scaled by the genome's mutation_rate.
+    pub chance_per_million: u32,
+    pub edits: u16,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -460,6 +492,27 @@ impl SimulationConfig {
             self.life.newborn_energy_consumption_multiplier,
         )?;
         validate_nonnegative(
+            "life.reproduction.seed_initial_energy",
+            self.life.reproduction.seed_initial_energy,
+        )?;
+        validate_nonnegative(
+            "life.reproduction.seed_maturation_energy",
+            self.life.reproduction.seed_maturation_energy,
+        )?;
+        validate_nonnegative(
+            "life.reproduction.seed_max_charge_per_tick",
+            self.life.reproduction.seed_max_charge_per_tick,
+        )?;
+        if self.life.reproduction.seed_maturation_energy <= self.life.reproduction.seed_initial_energy {
+            return Err("life.reproduction.seed_maturation_energy must exceed seed_initial_energy".into());
+        }
+        if self.life.reproduction.seed_max_charge_per_tick <= 0.0 {
+            return Err("life.reproduction.seed_max_charge_per_tick must be > 0".into());
+        }
+        if self.life.reproduction.seed_lifespan == 0 {
+            return Err("life.reproduction.seed_lifespan must be > 0".into());
+        }
+        validate_nonnegative(
             "life.transfer.reserve_consumption_multiplier",
             self.life.transfer.reserve_consumption_multiplier,
         )?;
@@ -482,6 +535,7 @@ impl SimulationConfig {
             ("life.consumption.pipe", self.life.consumption.pipe),
             ("life.consumption.leaf", self.life.consumption.leaf),
             ("life.consumption.stem", self.life.consumption.stem),
+            ("life.consumption.seed", self.life.consumption.seed),
             ("life.consumption.root", self.life.consumption.root),
             ("life.consumption.reactor", self.life.consumption.reactor),
             ("life.consumption.filter", self.life.consumption.filter),
@@ -523,8 +577,16 @@ impl SimulationConfig {
         {
             return Err("initial_mutation_rate must fit inside mutation-rate limits".into());
         }
-        if self.genetics.mutation_edits_per_event == 0 {
-            return Err("genetics.mutation_edits_per_event must be at least 1".into());
+        if self.genetics.seed_mutation.edits_per_affected_gene == 0 {
+            return Err("genetics.seed_mutation.edits_per_affected_gene must be at least 1".into());
+        }
+        if self.genetics.somatic_mutation.chance_per_million > 1_000_000 {
+            return Err("genetics.somatic_mutation.chance_per_million must be <= 1000000".into());
+        }
+        if self.genetics.somatic_mutation.chance_per_million != 0
+            && self.genetics.somatic_mutation.edits == 0
+        {
+            return Err("genetics.somatic_mutation.edits must be at least 1 when enabled".into());
         }
         if self.genetics.mutation_rate_evolution_chance_percent > 100 {
             return Err("genetics percentage values must be in 0..=100".into());

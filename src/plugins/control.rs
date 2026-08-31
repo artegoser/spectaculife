@@ -6,7 +6,10 @@ use bevy::{
 use bevy_fast_tilemap::prelude::*;
 
 use crate::{
-    config::{RenderConfig, SimulationConfig, DEFAULT_CONFIG_PATH, DEFAULT_RENDER_CONFIG_PATH},
+    config::{
+        DirectionActionKind, RenderConfig, SimulationConfig, DEFAULT_CONFIG_PATH,
+        DEFAULT_RENDER_CONFIG_PATH,
+    },
     types::State,
 };
 
@@ -278,14 +281,32 @@ fn update_hud(
         .max_energy_per_tick
         .map(|value| format!("{value:.2}"))
         .unwrap_or_else(|| "none".to_string());
+    let total_direction_weight: u64 = config
+        .genetics
+        .direction_actions
+        .iter()
+        .map(|entry| entry.weight as u64)
+        .sum();
+    let multiply_weight: u64 = config
+        .genetics
+        .direction_actions
+        .iter()
+        .filter(|entry| matches!(entry.kind, DirectionActionKind::MultiplySelf))
+        .map(|entry| entry.weight as u64)
+        .sum();
+    let somatic_branching = if total_direction_weight == 0 {
+        0.0
+    } else {
+        4.0 * multiply_weight as f32 / total_direction_weight as f32
+    };
 
     let value = format!(
         "Spectaculife  |  {status}  |  step {}  |  {:.3} ms/tick  |  {:.1} ticks/s  |  cursor {},{}\n\
 Render: {}  |  camera scale {:.2}  |  mip blend {:>3.0}%  |  fade {:.1}..{:.1}\n\
 Layers: [O] organics {}   [L] life {}   [P] pollution {}   [S] soil energy {}   [D] energy paths {}\n\
 World: {}x{}   spawn spacing {}   initial soil {:.1}..{:.1}   soil diffusion {:.2}   air diffusion {:.2}\n\
-Life: leaf +{:.2}/tick   transfer cap {}   collision self/foreign {}/{}   seed edits {}\n\
-Genetics: lifespan {}..{}   initial mutation {}..{}%   mutation bounds {}..{}%\n\
+Life: leaf +{:.2}/tick   transfer cap {}   collision self/foreign {}/{}   seed {:.2}->{:.1} charge<={:.2}/tick\n\
+Genetics: somatic branching E={:.2}   seed burst {}/gene   somatic {:.3}%@rate100 x{}   lifespan {}..{}   initial mutation {}..{}%   mutation bounds {}..{}%\n\
 Hotkeys: [Space] pause/resume   [N] single step   [I] reset   [O/L/P/S/D] layers   [H] HUD\n\
 Mouse: LMB/RMB drag   wheel zoom\n\
 Configs: simulation={}   render={}",
@@ -315,7 +336,13 @@ Configs: simulation={}   render={}",
         transfer_cap,
         config.life.collision.self_damage,
         config.life.collision.foreign_damage,
-        config.genetics.mutation_edits_per_event,
+        config.life.reproduction.seed_initial_energy,
+        config.life.reproduction.seed_maturation_energy,
+        config.life.reproduction.seed_max_charge_per_tick,
+        somatic_branching,
+        config.genetics.seed_mutation.edits_per_affected_gene,
+        config.genetics.somatic_mutation.chance_per_million as f32 / 10_000.0,
+        config.genetics.somatic_mutation.edits,
         config.genetics.lifespan.min,
         config.genetics.lifespan.max,
         config.genetics.initial_mutation_rate.min,

@@ -62,3 +62,16 @@ Close views use `bevy_fast_tilemap` so the original 16x16 organism sprites remai
 crisp. Zoomed-out views are crossfaded into a precomposed world texture with a full
 trilinear mip chain down to 1x1. The logarithmic fade range and soil visualization
 scale are configured in `assets/render.ron`.
+
+## Evolution defaults
+
+The default random body program is tuned near the critical branching point rather
+than far below or above it. With the shipped weights, a Stem has an expected
+`4 * P(MultiplySelf) = 1.0` same-organism Stem children before spatial/resource
+competition. This gives a broad morphology-size distribution without making every
+founder die after a few cells or making random growth automatically explode.
+
+`CreateSeed` is reproduction, not somatic growth. By default it creates a detached
+organism with its own configurable starting energy and does not inherit a branch of
+the parent's energy network. Only `CreateSeed` mutates the genome; `MultiplySelf`
+copies it unchanged.

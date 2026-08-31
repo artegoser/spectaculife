@@ -11,14 +11,16 @@
         // 16384 independently generated founders on a 512x512 world.
         organism_spacing: 4,
 
-        // Spatially heterogeneous resources give sensor/condition genes
-        // something useful to react to from the first generation.
-        initial_organics: (min: 0, max: 12),
-        initial_soil_energy: (min: 0.0, max: 3.0),
-        initial_pollution: (min: 0, max: 12),
+        // Weak abiotic heterogeneity helps founders bootstrap without turning
+        // the whole map into a free resource bath. Mature ecosystems still have
+        // to recycle death/metabolism products to sustain these resources.
+        initial_organics: (min: 0, max: 2),
+        initial_soil_energy: (min: 0.0, max: 1.0),
+        initial_pollution: (min: 0, max: 2),
 
         initial_stem_energy: 100.0,
-        initial_stem_lifespan: 2,
+        // Two ticks made world startup unnecessarily lottery-like.
+        initial_stem_lifespan: 8,
     ),
 
     environment: (
@@ -30,8 +32,21 @@
         lethal_organics: 16,
         lethal_soil_energy: 32.0,
 
-        // Energy placed into a newborn = this * that cell type's maintenance.
+        // Energy placed into an ordinary newborn = this * that cell type's maintenance.
         newborn_energy_consumption_multiplier: 2.0,
+
+        reproduction: (
+            // CreateSeed first makes a dormant seed attached to the parent.
+            // It receives energy through the parent's graph and becomes a new
+            // organism only after reaching seed_maturation_energy.
+            seed_initial_energy: 0.20,
+            // 6.0 is enough for a detached Stem to execute even the most
+            // expensive four-direction random growth gene once.
+            seed_maturation_energy: 6.0,
+            // Prevent a 100-energy founder from filling a seed in one tick.
+            seed_max_charge_per_tick: 0.50,
+            seed_lifespan: 250,
+        ),
 
         transfer: (
             // Preserve enough energy for roughly the next maintenance step.
@@ -66,6 +81,7 @@
             pipe: 0.1,
             leaf: 0.6,
             stem: 0.1,
+            seed: 0.02,
             root: 0.2,
             reactor: 0.4,
             filter: 0.3,
@@ -76,6 +92,7 @@
             pipe: 1,
             leaf: 4,
             stem: 2,
+            seed: 1,
             root: 2,
             reactor: 2,
             filter: 3,
@@ -88,6 +105,8 @@
             reactor: 0.8,
             filter: 0.6,
             multiply_self: 0.8,
+            // Construction cost only. The remaining energy needed for a viable
+            // offspring must be physically transferred into the attached seed.
             create_seed: 0.8,
         ),
 
@@ -126,37 +145,50 @@
     genetics: (
         lifespan: (min: 50, max: 1000),
 
-        // Mutation happens on CreateSeed only. MultiplySelf deliberately copies
-        // the genome unchanged.
         initial_mutation_rate: (min: 5, max: 100),
         mutation_rate_min: 1,
         mutation_rate_max: 100,
-        mutation_edits_per_event: 10,
+
+        // CreateSeed uses a strong inherited burst. A mutation event scans all
+        // 32 genes and each gene is selected with mutation_rate probability.
+        seed_mutation: (
+            edits_per_affected_gene: 4,
+        ),
+
+        // MultiplySelf is almost clonal but not mathematically perfect. The base
+        // chance is scaled by mutation_rate, so this is 0.025%..0.5% per copy.
+        somatic_mutation: (
+            chance_per_million: 5000,
+            edits: 1,
+        ),
 
         mutation_rate_evolution_chance_percent: 10,
         mutation_rate_increase_weight: 1,
         mutation_rate_decrease_weight: 1,
 
-        // Most edits explore arbitrary genes; seed/active genes still receive
-        // extra pressure because they are immediately reachable.
+        // Used by rare somatic point mutations. Seed mutation bursts scan
+        // genes directly, so their strength is not diluted by this target table.
         mutation_gene_targets: [
-            (kind: SeedGene, weight: 1),
-            (kind: ActiveGene, weight: 1),
+            (kind: SeedGene, weight: 2),
+            (kind: ActiveGene, weight: 2),
             (kind: RandomGene, weight: 6),
         ],
 
-        // Restored to the original balanced distribution: each ordinary action
-        // is weight 1 and KillCell is weight 3 (total 10). In particular,
-        // MultiplySelf is no longer the 37.5% default from the earlier patch.
+        // Keep random somatic growth close to the branching critical point.
+        // Total weight = 24, MultiplySelf = 6 => E[same-organism Stem children]
+        // = 4 * 6/24 = 1.0. This produces a broad size distribution instead
+        // of the old subcritical E=0.4 (everything tiny) or the earlier E=1.5
+        // runaway (one expanding cancer). CreateSeed is deliberately rarer and
+        // expensive because it is reproduction, not ordinary body growth.
         direction_actions: [
-            (kind: MultiplySelf, weight: 1),
-            (kind: MakeLeaf, weight: 1),
-            (kind: MakeRoot, weight: 1),
-            (kind: MakeReactor, weight: 1),
-            (kind: MakeFilter, weight: 1),
+            (kind: MultiplySelf, weight: 6),
+            (kind: MakeLeaf, weight: 2),
+            (kind: MakeRoot, weight: 2),
+            (kind: MakeReactor, weight: 2),
+            (kind: MakeFilter, weight: 2),
             (kind: CreateSeed, weight: 1),
-            (kind: Nothing, weight: 1),
-            (kind: KillCell, weight: 3),
+            (kind: Nothing, weight: 2),
+            (kind: KillCell, weight: 7),
         ],
 
         conditions: [
