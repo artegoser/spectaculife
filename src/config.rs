@@ -32,6 +32,30 @@ pub struct WorldConfig {
 pub struct EnvironmentConfig {
     pub soil_diffusion: f32,
     pub air_diffusion: f32,
+    /// Fraction of airborne pollution removed after transport/mixing each tick.
+    pub pollution_decay: f32,
+    pub wind: WindConfig,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct WindConfig {
+    pub enabled: bool,
+    /// Prevailing wind in cells/tick before the advection multiplier is applied.
+    pub base_x: f32,
+    pub base_y: f32,
+    /// Strength of the coherent local gust field added to the prevailing wind.
+    pub gust_strength: f32,
+    /// Approximate diameter of one coherent gust region in cells.
+    pub spatial_scale_cells: u32,
+    /// Generate a new gust target field every N simulation ticks.
+    pub gust_period_ticks: usize,
+    /// Exponential response toward a newly generated gust target, 0..1 per tick.
+    pub response_per_tick: f32,
+    /// Maximum displacement multiplier used by pollution advection. <=1 keeps
+    /// transport inside the immediate neighborhood in one simulation tick.
+    pub advection_cells_per_tick: f32,
+    /// Deterministic seed for the weather field.
+    pub seed: u64,
 }
 
 #[derive(Debug, Clone, Resource, Deserialize)]
@@ -48,6 +72,8 @@ pub struct RenderConfig {
 pub struct LifeConfig {
     pub lethal_organics: u8,
     pub lethal_soil_energy: f32,
+    /// None disables air toxicity. Filters are immune when a threshold is set.
+    pub lethal_pollution: Option<u8>,
     pub newborn_energy_consumption_multiplier: f32,
     pub reproduction: ReproductionConfig,
     pub transfer: TransferConfig,
@@ -75,8 +101,12 @@ pub struct ReproductionConfig {
 #[derive(Debug, Clone, Deserialize)]
 pub struct TransferConfig {
     pub reserve_consumption_multiplier: f32,
-    /// None = no throughput cap. Some(x) = at most x energy leaves a cell per tick.
+    /// Optional global throughput cap across all outgoing branches.
     pub max_energy_per_tick: Option<f32>,
+    /// Optional per-edge throughput. Unlike the old global cap this rewards
+    /// parallel vascular branching instead of forcing every shape through the
+    /// same one-cell bottleneck.
+    pub max_energy_per_branch_per_tick: Option<f32>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -142,6 +172,14 @@ pub struct GeneratorConfig {
 pub struct LeafGeneratorConfig {
     pub energy_per_tick: f32,
     pub pollution_divisor: f32,
+    /// Soil organics at which the nutrient contribution reaches 50%.
+    pub nutrient_half_saturation: f32,
+    /// Photosynthesis multiplier in completely depleted soil. 0 means a leaf
+    /// cannot bootstrap without local nutrient recycling.
+    pub nutrient_floor: f32,
+    /// More adjacent leaves than this triggers the crowding multiplier.
+    pub max_productive_leaf_neighbors: u8,
+    pub crowded_output_multiplier: f32,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -490,6 +528,28 @@ impl SimulationConfig {
         if !(0.0..=1.0).contains(&self.environment.air_diffusion) {
             return Err("environment.air_diffusion must be in 0..=1".into());
         }
+        validate_fraction("environment.pollution_decay", self.environment.pollution_decay)?;
+        validate_finite("environment.wind.base_x", self.environment.wind.base_x)?;
+        validate_finite("environment.wind.base_y", self.environment.wind.base_y)?;
+        validate_nonnegative(
+            "environment.wind.gust_strength",
+            self.environment.wind.gust_strength,
+        )?;
+        if self.environment.wind.spatial_scale_cells < 2 {
+            return Err("environment.wind.spatial_scale_cells must be >= 2".into());
+        }
+        if self.environment.wind.gust_period_ticks == 0 {
+            return Err("environment.wind.gust_period_ticks must be > 0".into());
+        }
+        validate_fraction(
+            "environment.wind.response_per_tick",
+            self.environment.wind.response_per_tick,
+        )?;
+        if !self.environment.wind.advection_cells_per_tick.is_finite()
+            || !(0.0..=1.0).contains(&self.environment.wind.advection_cells_per_tick)
+        {
+            return Err("environment.wind.advection_cells_per_tick must be in 0..=1".into());
+        }
         validate_nonnegative("life.lethal_soil_energy", self.life.lethal_soil_energy)?;
         validate_nonnegative(
             "life.newborn_energy_consumption_multiplier",
@@ -525,6 +585,10 @@ impl SimulationConfig {
             self.life.transfer.max_energy_per_tick,
         )?;
         validate_optional_nonnegative(
+            "life.transfer.max_energy_per_branch_per_tick",
+            self.life.transfer.max_energy_per_branch_per_tick,
+        )?;
+        validate_optional_nonnegative(
             "life.predation.max_energy_gain",
             self.life.predation.max_energy_gain,
         )?;
@@ -551,6 +615,10 @@ impl SimulationConfig {
             ("life.growth_energy.create_seed", self.life.growth_energy.create_seed),
             ("life.generators.leaf.energy_per_tick", self.life.generators.leaf.energy_per_tick),
             ("life.generators.leaf.pollution_divisor", self.life.generators.leaf.pollution_divisor),
+            (
+                "life.generators.leaf.nutrient_half_saturation",
+                self.life.generators.leaf.nutrient_half_saturation,
+            ),
             ("life.generators.root.extraction_fraction", self.life.generators.root.extraction_fraction),
             ("life.generators.root.energy_efficiency", self.life.generators.root.energy_efficiency),
             ("life.generators.root.soil_energy_output", self.life.generators.root.soil_energy_output),
@@ -564,6 +632,17 @@ impl SimulationConfig {
         }
         if self.life.generators.leaf.pollution_divisor == 0.0 {
             return Err("life.generators.leaf.pollution_divisor must be > 0".into());
+        }
+        validate_fraction(
+            "life.generators.leaf.nutrient_floor",
+            self.life.generators.leaf.nutrient_floor,
+        )?;
+        validate_fraction(
+            "life.generators.leaf.crowded_output_multiplier",
+            self.life.generators.leaf.crowded_output_multiplier,
+        )?;
+        if self.life.generators.leaf.max_productive_leaf_neighbors > 8 {
+            return Err("life.generators.leaf.max_productive_leaf_neighbors must be <= 8".into());
         }
         validate_u16_range("genetics.lifespan", self.genetics.lifespan)?;
         validate_u8_range(
@@ -634,6 +713,15 @@ fn validate_u16_range(name: &str, range: U16Range) -> Result<(), String> {
 fn validate_f32_range(name: &str, range: F32Range) -> Result<(), String> {
     if !range.min.is_finite() || !range.max.is_finite() || range.min > range.max {
         Err(format!("{name}: values must be finite and min <= max"))
+    } else {
+        Ok(())
+    }
+}
+
+
+fn validate_finite(name: &str, value: f32) -> Result<(), String> {
+    if !value.is_finite() {
+        Err(format!("{name} must be finite"))
     } else {
         Ok(())
     }

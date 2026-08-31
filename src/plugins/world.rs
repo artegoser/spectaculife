@@ -19,7 +19,7 @@ use bevy::prelude::*;
 use bevy_fast_tilemap::prelude::*;
 use rand::Rng;
 use std::sync::{
-    atomic::{AtomicBool, AtomicU64, Ordering},
+    atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering},
     mpsc, Arc, Mutex, Weak,
 };
 use std::thread;
@@ -62,6 +62,10 @@ pub struct SimulationWorker {
     paused: Arc<AtomicBool>,
     step_requested: Arc<AtomicBool>,
     avg_tick_ns: Arc<AtomicU64>,
+    worker_alive: Arc<AtomicBool>,
+    debug_phase: Arc<AtomicU8>,
+    active_tick: Arc<AtomicU64>,
+    completed_tick: Arc<AtomicU64>,
 }
 
 impl SimulationWorker {
@@ -89,6 +93,23 @@ impl SimulationWorker {
             1_000_000_000.0 / ns as f64
         }
     }
+
+    pub fn debug_status(&self) -> (bool, &'static str, u64, u64) {
+        let phase = match self.debug_phase.load(Ordering::Relaxed) {
+            1 => "wind-refresh",
+            2 => "environment",
+            3 => "life",
+            4 => "publish",
+            5 => "paused",
+            _ => "idle",
+        };
+        (
+            self.worker_alive.load(Ordering::Relaxed),
+            phase,
+            self.active_tick.load(Ordering::Relaxed),
+            self.completed_tick.load(Ordering::Relaxed),
+        )
+    }
 }
 
 struct SimSnapshot {
@@ -112,14 +133,33 @@ fn spawn_sim_thread(
     Arc<Mutex<Option<SimSnapshot>>>,
     mpsc::Sender<SimCommand>,
     Arc<AtomicU64>,
+    Arc<AtomicBool>,
+    Arc<AtomicU8>,
+    Arc<AtomicU64>,
+    Arc<AtomicU64>,
 ) {
     let latest_snapshot = Arc::new(Mutex::new(None));
     let snapshot_slot = Arc::downgrade(&latest_snapshot);
     let (cmd_tx, cmd_rx) = mpsc::channel();
     let avg_tick_ns = Arc::new(AtomicU64::new(0));
     let thread_avg_tick_ns = avg_tick_ns.clone();
+    let worker_alive = Arc::new(AtomicBool::new(true));
+    let thread_worker_alive = worker_alive.clone();
+    let debug_phase = Arc::new(AtomicU8::new(0));
+    let thread_debug_phase = debug_phase.clone();
+    let active_tick = Arc::new(AtomicU64::new(0));
+    let thread_active_tick = active_tick.clone();
+    let completed_tick = Arc::new(AtomicU64::new(0));
+    let thread_completed_tick = completed_tick.clone();
 
     thread::spawn(move || {
+        struct AliveGuard(Arc<AtomicBool>);
+        impl Drop for AliveGuard {
+            fn drop(&mut self) {
+                self.0.store(false, Ordering::Relaxed);
+            }
+        }
+        let _alive_guard = AliveGuard(thread_worker_alive);
         let mut grid = grid;
         let mut genomes = genomes;
         let mut step: usize = 0;
@@ -141,6 +181,9 @@ fn spawn_sim_thread(
                         sim_state.simulation_step = 0;
                         simulation_buffers = SimulationBuffers::new(&grid);
                         thread_avg_tick_ns.store(0, Ordering::Relaxed);
+                        thread_active_tick.store(0, Ordering::Relaxed);
+                        thread_completed_tick.store(0, Ordering::Relaxed);
+                        thread_debug_phase.store(0, Ordering::Relaxed);
                         reset_happened = true;
                     }
                 }
@@ -153,25 +196,34 @@ fn spawn_sim_thread(
             let do_step = step_requested.swap(false, Ordering::Relaxed);
             let is_paused = paused.load(Ordering::Relaxed);
             if is_paused && !do_step {
+                thread_debug_phase.store(5, Ordering::Relaxed);
                 thread::sleep(Duration::from_millis(1));
                 continue;
             }
 
             let tick_started = Instant::now();
+            let running_tick = step.saturating_add(1) as u64;
+            thread_active_tick.store(running_tick, Ordering::Relaxed);
+            thread_debug_phase.store(1, Ordering::Relaxed);
             update_simulation_step(
                 &mut sim_state,
                 &mut grid,
                 &mut genomes,
                 &mut simulation_buffers,
                 &config,
+                &thread_debug_phase,
             );
 
             step += 1;
             sim_state.simulation_step = step;
+            thread_debug_phase.store(4, Ordering::Relaxed);
 
             if !publish_snapshot(&snapshot_slot, &grid, step, false) {
                 break;
             }
+
+            thread_completed_tick.store(step as u64, Ordering::Relaxed);
+            thread_debug_phase.store(0, Ordering::Relaxed);
 
             let elapsed_ns = tick_started.elapsed().as_nanos().min(u64::MAX as u128) as u64;
             let previous = thread_avg_tick_ns.load(Ordering::Relaxed);
@@ -184,7 +236,15 @@ fn spawn_sim_thread(
         }
     });
 
-    (latest_snapshot, cmd_tx, avg_tick_ns)
+    (
+        latest_snapshot,
+        cmd_tx,
+        avg_tick_ns,
+        worker_alive,
+        debug_phase,
+        active_tick,
+        completed_tick,
+    )
 }
 
 fn publish_snapshot(
@@ -275,7 +335,15 @@ fn startup(
     let paused = Arc::new(AtomicBool::new(false));
     let step_requested = Arc::new(AtomicBool::new(false));
 
-    let (latest_snapshot, cmd_tx, avg_tick_ns) = spawn_sim_thread(
+    let (
+        latest_snapshot,
+        cmd_tx,
+        avg_tick_ns,
+        worker_alive,
+        debug_phase,
+        active_tick,
+        completed_tick,
+    ) = spawn_sim_thread(
         world.clone(),
         genomes,
         *settings,
@@ -291,6 +359,10 @@ fn startup(
         paused,
         step_requested,
         avg_tick_ns,
+        worker_alive,
+        debug_phase,
+        active_tick,
+        completed_tick,
     });
 
     // The detailed renderer stays on bevy_fast_tilemap: each layer is already a single

@@ -152,8 +152,11 @@ enum BirthKind {
     Root,
     Reactor,
     Filter,
-    Stem { genome: Genome },
-    Seed { genome: Genome },
+    /// Genome materialization is deliberately deferred until this birth has
+    /// actually won arbitration and the target is still empty.  Crowded fronts
+    /// therefore do not copy/mutate a 32-gene genome for failed collisions.
+    Stem { child_gene: GeneLocation },
+    Seed,
 }
 
 #[derive(Debug, Clone)]
@@ -300,7 +303,12 @@ fn update_maintenance_and_census(
                 if !dead {
                     life.steps_to_death -= 1;
                     dead = (cell.soil.organics > config.lethal_organics && life.ty != LifeType::Root)
-                        || (cell.soil.energy > config.lethal_soil_energy && life.ty != LifeType::Reactor);
+                        || (cell.soil.energy > config.lethal_soil_energy
+                            && life.ty != LifeType::Reactor)
+                        || (config
+                            .lethal_pollution
+                            .is_some_and(|threshold| cell.air.pollution > threshold)
+                            && life.ty != LifeType::Filter);
                 }
                 if !dead {
                     life.energy -= life.consumption(config);
@@ -477,14 +485,57 @@ fn generate_energy(grid: &mut Grid<WorldCell>, generator_indices: &[usize], conf
             let LifeCell::Alive(life) = grid.cells()[source].life else {
                 return None;
             };
-            (life.ty == LifeType::Leaf).then(|| GeneratorEffect {
-                source,
-                energy_gain: config.generators.leaf.energy_per_tick
-                    / (grid.cells()[source].air.pollution as f32
-                        / config.generators.leaf.pollution_divisor)
-                        .max(1.0),
-                soil_output: 0.0,
-                pollution_output: 0.0,
+            (life.ty == LifeType::Leaf).then(|| {
+                let leaf = &config.generators.leaf;
+                let cell = &grid.cells()[source];
+
+                // Sunlight is no longer free everywhere. A leaf needs a local
+                // nutrient cycle and an uncrowded canopy to make a meaningful
+                // surplus. This creates spatial niches without inventing a new
+                // hidden resource field: organisms can already sense organics
+                // and pollution with their genome conditions.
+                let organics = cell.soil.organics as f32;
+                let nutrient_saturation = if leaf.nutrient_half_saturation <= 0.0 {
+                    1.0
+                } else {
+                    organics / (organics + leaf.nutrient_half_saturation)
+                };
+                let nutrient_floor = leaf.nutrient_floor.clamp(0.0, 1.0);
+                let nutrient_factor = nutrient_floor
+                    + (1.0 - nutrient_floor) * nutrient_saturation.clamp(0.0, 1.0);
+
+                let adjacent_leaves = MOORE_OFFSETS
+                    .iter()
+                    .skip(1)
+                    .filter(|&&(dx, dy)| {
+                        let target = grid.offset_index(source, dx, dy);
+                        matches!(
+                            grid.cells()[target].life,
+                            LifeCell::Alive(neighbor) if neighbor.ty == LifeType::Leaf
+                        )
+                    })
+                    .count() as u8;
+                let crowding_factor = if adjacent_leaves
+                    > leaf.max_productive_leaf_neighbors
+                {
+                    leaf.crowded_output_multiplier.clamp(0.0, 1.0)
+                } else {
+                    1.0
+                };
+
+                let pollution_factor = 1.0
+                    / (cell.air.pollution as f32 / leaf.pollution_divisor.max(0.001))
+                        .max(1.0);
+
+                GeneratorEffect {
+                    source,
+                    energy_gain: leaf.energy_per_tick
+                        * nutrient_factor
+                        * crowding_factor
+                        * pollution_factor,
+                    soil_output: 0.0,
+                    pollution_output: 0.0,
+                }
             })
         })
         .collect();
@@ -686,7 +737,12 @@ fn transfer_energy_one_hop(grid: &mut Grid<WorldCell>, transferable_indices: &[u
 
             let mut directions = life.energy_to;
             let mut targets = [0_usize; 4];
-            let mut target_caps = [f32::INFINITY; 4];
+            let branch_cap = config
+                .transfer
+                .max_energy_per_branch_per_tick
+                .unwrap_or(f32::INFINITY)
+                .max(0.0);
+            let mut target_caps = [branch_cap; 4];
             let mut target_count = 0_usize;
             for dir in CellDir::ALL {
                 if !life.energy_to.get(dir) {
@@ -701,7 +757,7 @@ fn transfer_energy_one_hop(grid: &mut Grid<WorldCell>, transferable_indices: &[u
                             // charge. Aim one maintenance above the maturation threshold
                             // so the seed can actually cross it instead of asymptotically
                             // topping up to threshold and immediately falling below it.
-                            target_caps[target_count] = config
+                            let seed_cap = config
                                 .reproduction
                                 .seed_max_charge_per_tick
                                 .max(0.0)
@@ -711,6 +767,7 @@ fn transfer_energy_one_hop(grid: &mut Grid<WorldCell>, transferable_indices: &[u
                                         - target_life.energy)
                                         .max(0.0),
                                 );
+                            target_caps[target_count] = target_caps[target_count].min(seed_cap);
                         }
                         target_count += 1;
                     }
@@ -926,28 +983,41 @@ fn process_genomes(
                         false,
                         birth.lifespan,
                     ),
-                    BirthKind::Stem { genome } => (
-                        plan.organism_id,
-                        LifeType::Stem(genomes.alloc(genome)),
-                        Some(birth.parent_dir),
-                        None,
-                        true,
-                        birth.lifespan,
-                    ),
-                    BirthKind::Seed { genome } => (
-                        // A developing seed is still physically part of the
-                        // parent's body.  Its new organism id is allocated only
-                        // on maturation/detachment.
-                        plan.organism_id,
-                        LifeType::Seed(SeedState {
-                            genome: genomes.alloc(genome),
-                            stem_lifespan: birth.lifespan,
-                        }),
-                        Some(birth.parent_dir),
-                        Some(config.life.reproduction.seed_initial_energy),
-                        true,
-                        config.life.reproduction.seed_lifespan,
-                    ),
+                    BirthKind::Stem { child_gene } => {
+                        let mut child_genome = *genomes.get(plan.handle);
+                        child_genome.active_gene = child_gene;
+                        // Somatic mutation belongs to the successful daughter,
+                        // not to a failed growth attempt into an occupied cell.
+                        child_genome.mutate_somatic(&config.genetics);
+                        (
+                            plan.organism_id,
+                            LifeType::Stem(genomes.alloc(child_genome)),
+                            Some(birth.parent_dir),
+                            None,
+                            true,
+                            birth.lifespan,
+                        )
+                    }
+                    BirthKind::Seed => {
+                        let mut child_genome = *genomes.get(plan.handle);
+                        // Likewise, the expensive inherited burst happens only
+                        // for a seed that really gets constructed.
+                        child_genome.mutate_seed(&config.genetics);
+                        (
+                            // A developing seed is still physically part of the
+                            // parent's body. Its new organism id is allocated only
+                            // on maturation/detachment.
+                            plan.organism_id,
+                            LifeType::Seed(SeedState {
+                                genome: genomes.alloc(child_genome),
+                                stem_lifespan: birth.lifespan,
+                            }),
+                            Some(birth.parent_dir),
+                            Some(config.life.reproduction.seed_initial_energy),
+                            true,
+                            config.life.reproduction.seed_lifespan,
+                        )
+                    }
                 };
 
             let mut child = ty.make_newborn_cell(
@@ -1205,33 +1275,24 @@ fn build_genome_plan(
                 &config.life,
             ),
             GeneDirectionAction::MultiplySelf(lifespan, child_gene) => {
-                let mut child_genome = *genomes.get(handle);
-                child_genome.active_gene = child_gene;
-                // A somatic copy is almost exact, but not mathematically perfect.
-                // Only the daughter is edited; the parent's genome is untouched.
-                child_genome.mutate_somatic(&config.genetics);
                 collect_birth_or_collision(
                     &mut plan,
                     grid,
                     target,
                     dir,
                     lifespan.0,
-                    BirthKind::Stem { genome: child_genome },
+                    BirthKind::Stem { child_gene },
                     &config.life,
                 );
             }
             GeneDirectionAction::CreateSeed(lifespan) => {
-                let mut child_genome = *genomes.get(handle);
-                // Seed mutation is the strong inherited mutation path.  The
-                // resulting genome is stored dormant until the seed matures.
-                child_genome.mutate_seed(&config.genetics);
                 collect_birth_or_collision(
                     &mut plan,
                     grid,
                     target,
                     dir,
                     lifespan.0,
-                    BirthKind::Seed { genome: child_genome },
+                    BirthKind::Seed,
                     &config.life,
                 );
             }
@@ -1684,10 +1745,12 @@ mod tests {
         assert_eq!(first_birth.target, grid.offset_index(source, -1, 0));
         assert_eq!(first_birth.parent_dir, CellDir::Right);
 
-        let BirthKind::Stem { genome: child_genome } = &first_birth.kind else {
+        let BirthKind::Stem { child_gene } = first_birth.kind else {
             panic!("expected a Stem child");
         };
-        let child_handle = genomes.alloc(*child_genome);
+        let mut child_genome = *genomes.get(handle);
+        child_genome.active_gene = child_gene;
+        let child_handle = genomes.alloc(child_genome);
         let child_source = first_birth.target;
         let child = AliveCell::new(
             LifeType::Stem(child_handle),
@@ -1767,18 +1830,21 @@ mod tests {
         grid.cells_mut()[source].life = LifeCell::Alive(life);
 
         let plan = build_genome_plan(source, life, handle, &grid, &genomes, 1, &config);
-        let child = plan
+        let child_gene = plan
             .births
             .iter()
-            .find_map(|birth| match &birth.kind {
-                BirthKind::Stem { genome } => Some(*genome),
+            .find_map(|birth| match birth.kind {
+                BirthKind::Stem { child_gene } => Some(child_gene),
                 _ => None,
             })
             .expect("MultiplySelf should produce a Stem birth request");
 
+        // The heavy Genome copy/mutation is intentionally deferred until a
+        // birth wins arbitration. The plan only needs the next program state.
+        assert_eq!(child_gene, next_gene);
         let mut expected = genome;
-        expected.active_gene = next_gene;
-        assert_eq!(child, expected);
+        expected.active_gene = child_gene;
+        assert_eq!(expected.active_gene, next_gene);
     }
 
     #[test]
@@ -1986,6 +2052,55 @@ mod tests {
         assert!((parent.energy - (10.0 - charged)).abs() < 1e-5);
         let after_next_maintenance = seed.energy + charged - config.life.consumption.seed;
         assert!(after_next_maintenance >= config.life.reproduction.seed_maturation_energy);
+    }
+
+    #[test]
+    fn leaf_output_depends_on_nutrients_and_canopy_crowding() {
+        let config = SimulationConfig::load();
+        let mut grid = Grid::<WorldCell>::new(5, 5);
+        let center = 12;
+
+        let make_leaf = || {
+            LifeCell::Alive(AliveCell::new(
+                LifeType::Leaf,
+                1,
+                0.0,
+                EnergyDirections::default(),
+                None,
+                100,
+            ))
+        };
+
+        grid.cells_mut()[center].life = make_leaf();
+        grid.cells_mut()[center].soil.organics = 0;
+        generate_energy(&mut grid, &[center], &config.life);
+        let LifeCell::Alive(low_nutrient) = grid.cells()[center].life else {
+            panic!("leaf unexpectedly died");
+        };
+
+        grid.cells_mut()[center].life = make_leaf();
+        grid.cells_mut()[center].soil.organics = 16;
+        generate_energy(&mut grid, &[center], &config.life);
+        let LifeCell::Alive(fertile) = grid.cells()[center].life else {
+            panic!("leaf unexpectedly died");
+        };
+        assert!(fertile.energy > low_nutrient.energy);
+
+        // Deliberately exceed the configured productive-neighbor limit.
+        for &(dx, dy) in MOORE_OFFSETS
+            .iter()
+            .skip(1)
+            .take(config.life.generators.leaf.max_productive_leaf_neighbors as usize + 1)
+        {
+            let target = grid.offset_index(center, dx, dy);
+            grid.cells_mut()[target].life = make_leaf();
+        }
+        grid.cells_mut()[center].life = make_leaf();
+        generate_energy(&mut grid, &[center], &config.life);
+        let LifeCell::Alive(crowded) = grid.cells()[center].life else {
+            panic!("leaf unexpectedly died");
+        };
+        assert!(crowded.energy < fertile.energy);
     }
 
     #[test]

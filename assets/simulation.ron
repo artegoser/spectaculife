@@ -7,30 +7,53 @@
         width: 512,
         height: 512,
 
-        // Keep a large independent starting population. 4 means 128x128 =
-        // 16384 independently generated founders on a 512x512 world.
-        organism_spacing: 4,
+        // Give developmental programs actual room to unfold. Spacing 4 seeded
+        // 16384 founders only three cells apart, which selected for tiny bodies
+        // by collision before ecology mattered. 12 still starts ~1849 genomes.
+        organism_spacing: 12,
 
-        // Weak abiotic heterogeneity helps founders bootstrap without turning
-        // the whole map into a free resource bath. Mature ecosystems still have
-        // to recycle death/metabolism products to sustain these resources.
+        // A small bootstrap pool. It is intentionally insufficient for a leaf
+        // monoculture: productive photosynthesis now depends on local organics,
+        // crowding and moving pollution plumes.
         initial_organics: (min: 0, max: 2),
-        initial_soil_energy: (min: 0.0, max: 1.0),
+        initial_soil_energy: (min: 0.0, max: 0.5),
         initial_pollution: (min: 0, max: 2),
 
-        initial_stem_energy: 100.0,
-        // Two ticks made world startup unnecessarily lottery-like.
-        initial_stem_lifespan: 8,
+        // Enough developmental budget to discover a body, but not enough to
+        // ignore energy-producing organs indefinitely.
+        initial_stem_energy: 80.0,
+        initial_stem_lifespan: 20,
     ),
 
     environment: (
-        soil_diffusion: 0.18,
-        air_diffusion: 0.22,
+        soil_diffusion: 0.14,
+
+        // Molecular/turbulent mixing is deliberately weak; most long-range
+        // pollution transport now comes from the coherent wind field below.
+        air_diffusion: 0.06,
+        pollution_decay: 0.015,
+
+        wind: (
+            enabled: true,
+            // Weak prevailing drift plus a stronger coherent local gust field.
+            base_x: 0.18,
+            base_y: -0.04,
+            gust_strength: 0.82,
+            spatial_scale_cells: 56,
+            gust_period_ticks: 120,
+            response_per_tick: 0.06,
+            // <= 1 means pollution cannot advect farther than one cell/tick.
+            advection_cells_per_tick: 0.85,
+            seed: 12648430,
+        ),
     ),
 
     life: (
         lethal_organics: 16,
         lethal_soil_energy: 32.0,
+        // Dense downwind plumes become a real local hazard. Filters are immune,
+        // so polluted niches can select for a dedicated cleanup organ.
+        lethal_pollution: Some(96),
 
         // Energy placed into an ordinary newborn = this * that cell type's maintenance.
         newborn_energy_consumption_multiplier: 2.0,
@@ -56,6 +79,9 @@
             // Branches still share the actually available energy, but a colony
             // is no longer forced through the throughput of one linear front.
             max_energy_per_tick: None,
+            // Per-edge cap preserves a meaningful vascular throughput while
+            // letting a branched network carry proportionally more energy.
+            max_energy_per_branch_per_tick: None,
         ),
 
         collision: (
@@ -112,11 +138,15 @@
 
         generators: (
             leaf: (
-                // Historical value was 1.2. 0.8 keeps a leaf viable (maintenance
-                // is 0.6) but cuts its steady surplus from ~0.6 to ~0.2/tick,
-                // so finite soil/pollution energy and predation remain competitive.
-                energy_per_tick: 0.8,
-                pollution_divisor: 4.0,
+                // Gross sunlight can be strong, but it is no longer a free
+                // everywhere-resource. Local nutrients, canopy spacing and air
+                // quality determine whether the 0.6/tick maintenance is paid.
+                energy_per_tick: 1.2,
+                pollution_divisor: 8.0,
+                nutrient_half_saturation: 2.0,
+                nutrient_floor: 0.35,
+                max_productive_leaf_neighbors: 2,
+                crowded_output_multiplier: 0.35,
             ),
 
             root: (
@@ -179,21 +209,20 @@
             (kind: RandomGene, weight: 6),
         ],
 
-        // Keep random somatic growth close to the branching critical point.
-        // Total weight = 24, MultiplySelf = 6 => E[same-organism Stem children]
-        // = 4 * 6/24 = 1.0. This produces a broad size distribution instead
-        // of the old subcritical E=0.4 (everything tiny) or the earlier E=1.5
-        // runaway (one expanding cancer). CreateSeed is deliberately rarer and
-        // expensive because it is reproduction, not ordinary body growth.
+        // Slightly supercritical developmental growth. With body-relative
+        // directions this makes genuinely large/random morphologies reachable,
+        // while the harsher ecology (nutrient-dependent leaves, canopy crowding,
+        // toxic wind-borne pollution) is responsible for stopping bad designs.
+        // Total weight = 21, MultiplySelf = 6 => E ~= 1.14.
         direction_actions: [
             (kind: MultiplySelf, weight: 6),
             (kind: MakeLeaf, weight: 2),
             (kind: MakeRoot, weight: 2),
-            (kind: MakeReactor, weight: 2),
-            (kind: MakeFilter, weight: 2),
+            (kind: MakeReactor, weight: 1),
+            (kind: MakeFilter, weight: 1),
             (kind: CreateSeed, weight: 1),
             (kind: Nothing, weight: 2),
-            (kind: KillCell, weight: 7),
+            (kind: KillCell, weight: 6),
         ],
 
         conditions: [

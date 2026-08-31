@@ -258,10 +258,13 @@ fn update_hud(
 
     let status = if state.paused { "PAUSED" } else { "RUNNING" };
     let on_off = |value: bool| if value { "on" } else { "off" };
-    let (tick_ms, ticks_per_second) = sim
+    let (tick_ms, ticks_per_second, worker_alive, worker_phase, active_tick, completed_tick) = sim
         .as_ref()
-        .map(|sim| (sim.average_tick_ms(), sim.ticks_per_second()))
-        .unwrap_or((0.0, 0.0));
+        .map(|sim| {
+            let (alive, phase, active, completed) = sim.debug_status();
+            (sim.average_tick_ms(), sim.ticks_per_second(), alive, phase, active, completed)
+        })
+        .unwrap_or((0.0, 0.0, false, "missing", 0, 0));
     let camera_scale = camera.iter().next().map(|t| t.scale.x).unwrap_or(1.0);
     let mip_blend = overview_blend(
         camera_scale,
@@ -279,6 +282,12 @@ fn update_hud(
         .life
         .transfer
         .max_energy_per_tick
+        .map(|value| format!("{value:.2}"))
+        .unwrap_or_else(|| "none".to_string());
+    let branch_transfer_cap = config
+        .life
+        .transfer
+        .max_energy_per_branch_per_tick
         .map(|value| format!("{value:.2}"))
         .unwrap_or_else(|| "none".to_string());
     let total_direction_weight: u64 = config
@@ -300,12 +309,22 @@ fn update_hud(
         4.0 * multiply_weight as f32 / total_direction_weight as f32
     };
 
+    let lethal_air = config
+        .life
+        .lethal_pollution
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "none".to_string());
+    let wind_mode = if config.environment.wind.enabled { "gusts" } else { "off" };
+
     let value = format!(
         "Spectaculife  |  {status}  |  step {}  |  {:.3} ms/tick  |  {:.1} ticks/s  |  cursor {},{}\n\
+Worker: {}  phase={}  active_tick={}  completed_tick={}\n\
 Render: {}  |  camera scale {:.2}  |  mip blend {:>3.0}%  |  fade {:.1}..{:.1}\n\
 Layers: [O] organics {}   [L] life {}   [P] pollution {}   [S] soil energy {}   [D] energy paths {}\n\
-World: {}x{}   spawn spacing {}   initial soil {:.1}..{:.1}   soil diffusion {:.2}   air diffusion {:.2}\n\
-Life: leaf +{:.2}/tick   transfer cap {}   collision self/foreign {}/{}   seed {:.2}->{:.1} charge<={:.2}/tick\n\
+World: {}x{}   spawn spacing {}   initial soil {:.1}..{:.1}\n\
+Environment: soil diffusion {:.2}   air mixing {:.2}   wind {} advect {:.2}   gust {}c/{}t   decay {:.3}\n\
+Life: leaf gross +{:.2}   nutrient K={:.1} floor={:.2}   crowd >{} x{:.2}   lethal air {}\n\
+Life net: transfer global {} / branch {}   collision self/foreign {}/{}   seed {:.2}->{:.1} charge<={:.2}/tick\n\
 Genetics: frame={}   somatic branching E={:.2}   seed burst {}/gene   somatic {:.3}%@rate100 x{}   lifespan {}..{}   initial mutation {}..{}%   mutation bounds {}..{}%\n\
 Hotkeys: [Space] pause/resume   [N] single step   [I] reset   [O/L/P/S/D] layers   [H] HUD\n\
 Mouse: LMB/RMB drag   wheel zoom\n\
@@ -315,6 +334,10 @@ Configs: simulation={}   render={}",
         ticks_per_second,
         state.cursor_position.x,
         state.cursor_position.y,
+        if worker_alive { "alive" } else { "DEAD" },
+        worker_phase,
+        active_tick,
+        completed_tick,
         render_mode,
         camera_scale,
         mip_blend * 100.0,
@@ -332,8 +355,19 @@ Configs: simulation={}   render={}",
         config.world.initial_soil_energy.max,
         config.environment.soil_diffusion,
         config.environment.air_diffusion,
+        wind_mode,
+        config.environment.wind.advection_cells_per_tick,
+        config.environment.wind.spatial_scale_cells,
+        config.environment.wind.gust_period_ticks,
+        config.environment.pollution_decay,
         config.life.generators.leaf.energy_per_tick,
+        config.life.generators.leaf.nutrient_half_saturation,
+        config.life.generators.leaf.nutrient_floor,
+        config.life.generators.leaf.max_productive_leaf_neighbors,
+        config.life.generators.leaf.crowded_output_multiplier,
+        lethal_air,
         transfer_cap,
+        branch_transfer_cap,
         config.life.collision.self_damage,
         config.life.collision.foreign_damage,
         config.life.reproduction.seed_initial_energy,
