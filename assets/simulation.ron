@@ -4,13 +4,13 @@
 // add up to 100. This file intentionally contains no renderer settings.
 (
     world: (
-        width: 512,
-        height: 512,
+        width: 2048,
+        height: 256,
 
         // Give developmental programs actual room to unfold. Spacing 4 seeded
         // 16384 founders only three cells apart, which selected for tiny bodies
         // by collision before ecology mattered. 12 still starts ~1849 genomes.
-        organism_spacing: 12,
+        organism_spacing: 5,
 
         // A small bootstrap pool. It is intentionally insufficient for a leaf
         // monoculture: productive photosynthesis now depends on local organics,
