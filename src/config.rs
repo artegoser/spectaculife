@@ -644,6 +644,18 @@ impl SimulationConfig {
         if self.life.generators.leaf.max_productive_leaf_neighbors > 8 {
             return Err("life.generators.leaf.max_productive_leaf_neighbors must be <= 8".into());
         }
+        for (name, value) in [
+            ("root.energy_efficiency", self.life.generators.root.energy_efficiency),
+            ("reactor.energy_efficiency", self.life.generators.reactor.energy_efficiency),
+            ("filter.energy_efficiency", self.life.generators.filter.energy_efficiency),
+            ("root.extraction_fraction", self.life.generators.root.extraction_fraction),
+            ("reactor.extraction_fraction", self.life.generators.reactor.extraction_fraction),
+            ("filter.extraction_fraction", self.life.generators.filter.extraction_fraction),
+        ] { validate_fraction(name, value)?; }
+        let root = &self.life.generators.root;
+        if root.energy_efficiency + root.soil_energy_output + root.pollution_output > 1.0 {
+            return Err("root energy, soil and pollution yields must sum to <= 1".into());
+        }
         validate_u16_range("genetics.lifespan", self.genetics.lifespan)?;
         validate_u8_range(
             "genetics.initial_mutation_rate",

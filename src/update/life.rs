@@ -700,7 +700,7 @@ fn generate_energy(grid: &mut Grid<WorldCell>, generator_indices: &[usize], conf
         }
         cell.soil.energy += effect.soil_output;
         cell.air.pollution = cell.air.pollution.saturating_add(
-            effect.pollution_output.round().clamp(0.0, 255.0) as u8,
+            effect.pollution_output.floor().clamp(0.0, 255.0) as u8,
         );
     }
 }
@@ -923,6 +923,11 @@ fn process_genomes(
     }
     external_effects.sort_unstable_by_key(|effect| effect.0);
 
+    let mut attacks: Vec<(usize, usize)> = plans.iter()
+        .filter(|plan| !plan.die)
+        .flat_map(|plan| plan.kill_targets.iter().map(move |&target| (target, plan.source)))
+        .collect();
+
     // Commit every Stem's own state first. External effects are intentionally
     // delayed until all births/state changes are done so they cannot be overwritten.
     for plan in plans {
@@ -1053,6 +1058,8 @@ fn process_genomes(
 
         grid.cells_mut()[plan.source].life = LifeCell::Alive(center);
     }
+
+    resolve_predation(grid, &mut attacks, &config.life);
 
     let mut i = 0;
     while i < external_effects.len() {
@@ -1221,7 +1228,10 @@ fn build_genome_plan(
     };
 
     let growth_gene = genomes.get(handle).get_gene(next_active_gene);
-    let total_energy = growth_gene.energy_capacity(&config.life.growth_energy);
+    let total_energy = growth_gene.energy_capacity(&config.life.growth_energy)
+        + CellDir::ALL.into_iter().map(|dir| {
+            birth_endowment(direction_action(&growth_gene, dir), handle, &config.life)
+        }).sum::<f32>();
     plan.active_gene_update = Some(next_active_gene);
 
     if local_energy <= total_energy {
@@ -1297,8 +1307,7 @@ fn build_genome_plan(
                 );
             }
             GeneDirectionAction::KillCell => {
-                if let LifeCell::Alive(target_life) = grid.cells()[target].life {
-                    local_energy += predation_energy_gain(target_life.energy, &config.life);
+                if grid.cells()[target].life.is_alive() {
                     plan.kill_targets.push(target);
                 }
             }
@@ -1425,14 +1434,65 @@ fn collect_gene_action(
 fn collect_kill(
     target: usize,
     grid: &Grid<WorldCell>,
-    energy: &mut f32,
+    _energy: &mut f32,
     plan: &mut GenomePlan,
-    config: &LifeConfig,
+    _config: &LifeConfig,
 ) {
-    if let LifeCell::Alive(target_life) = grid.cells()[target].life {
-        *energy += predation_energy_gain(target_life.energy, config);
+    if grid.cells()[target].life.is_alive() {
         plan.kill_targets.push(target);
     }
+}
+
+// A victim's actual remaining reserves are debited once, after growth commits.
+// Income is available next tick; simultaneous attackers cannot spend phantom prey.
+fn resolve_predation(grid: &mut Grid<WorldCell>, attacks: &mut Vec<(usize, usize)>, config: &LifeConfig) {
+    attacks.sort_unstable();
+    attacks.dedup();
+    let victims: Vec<usize> = attacks.iter().map(|a| a.0).collect();
+    let mut payouts = Vec::new();
+    let mut i = 0;
+    while i < attacks.len() {
+        let target = attacks[i].0;
+        let start = i;
+        while i < attacks.len() && attacks[i].0 == target { i += 1; }
+        let attackers: Vec<usize> = attacks[start..i].iter().map(|a| a.1)
+            .filter(|source| victims.binary_search(source).is_err()
+                && matches!(grid.cells()[*source].life, LifeCell::Alive(life) if life.steps_to_death > 0))
+            .collect();
+        if attackers.is_empty() { continue; }
+        if let LifeCell::Alive(life) = &mut grid.cells_mut()[target].life {
+            let gain = predation_energy_gain(life.energy, config);
+            life.energy -= gain;
+            for source in &attackers { payouts.push((*source, gain / attackers.len() as f32)); }
+        }
+    }
+    for (source, gain) in payouts {
+        if let LifeCell::Alive(life) = &mut grid.cells_mut()[source].life {
+            life.incoming_energy += gain;
+        }
+    }
+}
+
+// Pay for newborn reserves and every recoverable unit of corpse fuel. Seeds
+// prepay their later Stem/Pipe biomass so maturation cannot mint chemical energy.
+fn birth_endowment(action: GeneDirectionAction, handle: GenomeHandle, config: &LifeConfig) -> f32 {
+    let ty = match action {
+        GeneDirectionAction::MakeLeaf(_) => LifeType::Leaf,
+        GeneDirectionAction::MakeRoot(_) => LifeType::Root,
+        GeneDirectionAction::MakeReactor(_) => LifeType::Reactor,
+        GeneDirectionAction::MakeFilter(_) => LifeType::Filter,
+        GeneDirectionAction::MultiplySelf(..) => LifeType::Stem(handle),
+        GeneDirectionAction::CreateSeed(_) => LifeType::Seed(SeedState { genome: handle, stem_lifespan: 1 }),
+        _ => return 0.0,
+    };
+    let mut mass = ty.organics(config);
+    if ty.is_fertile() || ty.is_seed() {
+        mass = mass.max(config.organics.stem).max(config.organics.pipe);
+    }
+    let pollution = (mass / config.death.pollution_per_organic_divisor).max(config.death.minimum_pollution);
+    let reserve = if ty.is_seed() { config.reproduction.seed_initial_energy }
+        else { ty.consumption(config) * config.newborn_energy_consumption_multiplier };
+    reserve + mass as f32 + pollution as f32
 }
 
 #[inline]
@@ -1629,7 +1689,7 @@ fn kill_index(grid: &mut Grid<WorldCell>, index: usize, genomes: &mut GenomePool
     {
         let cell = &mut grid.cells_mut()[index];
         cell.soil.organics = cell.soil.organics.saturating_add(life.organics(config));
-        cell.soil.energy += life.energy.max(0.0) * config.death.energy_to_soil_fraction;
+        cell.soil.energy += (life.energy.max(0.0) + life.incoming_energy) * config.death.energy_to_soil_fraction;
         cell.air.pollution = cell
             .air
             .pollution
@@ -1683,6 +1743,39 @@ mod tests {
         cell
     }
 
+
+    #[test]
+    fn predators_share_one_debited_prey_reserve() {
+        let config = SimulationConfig::load();
+        let mut grid = Grid::<WorldCell>::new(5, 1);
+        for i in 0..3 { grid.cells_mut()[i] = pipe(10.0, EnergyDirections::default()); }
+        let mut attacks = vec![(0, 1), (0, 1), (0, 2)];
+        resolve_predation(&mut grid, &mut attacks, &config.life);
+        let mut total = 0.0;
+        for i in 0..3 {
+            let LifeCell::Alive(life) = grid.cells()[i].life else { panic!() };
+            total += life.energy + life.incoming_energy;
+            if i != 0 { assert_eq!(life.incoming_energy, 5.0); }
+        }
+        assert_eq!(total, 30.0);
+        assert_eq!(grid.cells()[0].life.energy(), 0.0);
+    }
+
+    #[test]
+    fn birth_prepays_reserves_and_recyclable_fuel() {
+        use crate::cells::life_cell::genome::LifeSpan;
+        let config = SimulationConfig::load();
+        let mut genomes = GenomePool::new();
+        let handle = genomes.alloc(Genome::random(&mut rand::thread_rng(), &config.genetics));
+        for action in [
+            GeneDirectionAction::MakeLeaf(LifeSpan(100)),
+            GeneDirectionAction::MakeRoot(LifeSpan(100)),
+            GeneDirectionAction::CreateSeed(LifeSpan(100)),
+        ] {
+            let endowment = birth_endowment(action, handle, &config.life);
+            assert!(endowment >= 3.0);
+        }
+    }
 
     #[test]
     fn relative_direction_frame_rotates_with_the_growth_heading() {

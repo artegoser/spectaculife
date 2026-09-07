@@ -155,7 +155,7 @@
                 extraction_fraction: 0.16,
                 energy_efficiency: 0.6,
                 soil_energy_output: 0.2,
-                pollution_output: 0.5,
+                pollution_output: 0.2,
             ),
 
             reactor: (
