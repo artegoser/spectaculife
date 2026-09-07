@@ -84,6 +84,33 @@ pub struct LifeConfig {
     pub organics: CellOrganicsConfig,
     pub growth_energy: GrowthEnergyConfig,
     pub generators: GeneratorConfig,
+    #[serde(default)]
+    pub water: WaterConfig,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct WaterConfig {
+    pub rainfall_per_tick: f32,
+    pub soil_capacity: f32,
+    pub cell_capacity: f32,
+    pub root_uptake_per_tick: f32,
+    pub transfer_fraction: f32,
+    pub leaf_water_per_energy: f32,
+    pub organ_reserve_ticks: f32,
+}
+
+impl Default for WaterConfig {
+    fn default() -> Self {
+        Self {
+            rainfall_per_tick: 0.8,
+            soil_capacity: 12.0,
+            cell_capacity: 8.0,
+            root_uptake_per_tick: 1.2,
+            transfer_fraction: 0.25,
+            leaf_water_per_energy: 0.3,
+            organ_reserve_ticks: 4.0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -549,6 +576,19 @@ impl SimulationConfig {
             || !(0.0..=1.0).contains(&self.environment.wind.advection_cells_per_tick)
         {
             return Err("environment.wind.advection_cells_per_tick must be in 0..=1".into());
+        }
+        for (name, value) in [
+            ("water.rainfall_per_tick", self.life.water.rainfall_per_tick),
+            ("water.soil_capacity", self.life.water.soil_capacity),
+            ("water.cell_capacity", self.life.water.cell_capacity),
+            ("water.root_uptake_per_tick", self.life.water.root_uptake_per_tick),
+            ("water.organ_reserve_ticks", self.life.water.organ_reserve_ticks),
+        ] { validate_nonnegative(name, value)?; }
+        if !self.life.water.leaf_water_per_energy.is_finite() || self.life.water.leaf_water_per_energy <= 0.0 {
+            return Err("water.leaf_water_per_energy must be finite and > 0".into());
+        }
+        if !(0.0..=0.25).contains(&self.life.water.transfer_fraction) {
+            return Err("water.transfer_fraction must be in 0..=0.25 for conservative four-way diffusion".into());
         }
         validate_nonnegative("life.lethal_soil_energy", self.life.lethal_soil_energy)?;
         validate_nonnegative(

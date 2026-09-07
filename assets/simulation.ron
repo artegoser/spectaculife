@@ -7,14 +7,12 @@
         width: 2048,
         height: 256,
 
-        // Give developmental programs actual room to unfold. Spacing 4 seeded
-        // 16384 founders only three cells apart, which selected for tiny bodies
-        // by collision before ecology mattered. 12 still starts ~1849 genomes.
-        organism_spacing: 5,
+        // Room for development before neighboring founders collide.
+        // The default world starts 3762 independently randomized founders.
+        organism_spacing: 12,
 
-        // A small bootstrap pool. It is intentionally insufficient for a leaf
-        // monoculture: productive photosynthesis now depends on local organics,
-        // crowding and moving pollution plumes.
+        // Finite bootstrap detritus. Long-term energy comes from sunlight;
+        // productive leaves require water delivered through roots and tissue.
         initial_organics: (min: 0, max: 2),
         initial_soil_energy: (min: 0.0, max: 0.5),
         initial_pollution: (min: 0, max: 2),
@@ -55,25 +53,39 @@
         // so polluted niches can select for a dedicated cleanup organ.
         lethal_pollution: Some(96),
 
-        // Energy placed into an ordinary newborn = this * that cell type's maintenance.
-        newborn_energy_consumption_multiplier: 2.0,
+        // Parent-funded newborn reserve. Allows time for transport to start.
+        // Construction also pays for biomass and its recoverable waste.
+        newborn_energy_consumption_multiplier: 12.0,
+
+        // Sunlight supplies energy; rainfall supplies water, never energy.
+        // Roots drain their own finite soil reservoir. Connected tissue moves
+        // water one edge/tick; leaves evaporate it during photosynthesis.
+        water: (
+            rainfall_per_tick: 0.8,
+            soil_capacity: 12.0,
+            cell_capacity: 8.0,
+            root_uptake_per_tick: 1.2,
+            transfer_fraction: 0.25,
+            leaf_water_per_energy: 0.3,
+            organ_reserve_ticks: 4.0,
+        ),
 
         reproduction: (
             // CreateSeed first makes a dormant seed attached to the parent.
             // It receives energy through the parent's graph and becomes a new
             // organism only after reaching seed_maturation_energy.
             seed_initial_energy: 0.20,
-            // 6.0 is enough for a detached Stem to execute even the most
-            // expensive four-direction random growth gene once.
-            seed_maturation_energy: 6.0,
+            // Enough to build a functional body under fully funded birth costs.
+            // Every unit must arrive from the parent before detachment.
+            seed_maturation_energy: 48.0,
             // Prevent a 100-energy founder from filling a seed in one tick.
-            seed_max_charge_per_tick: 0.50,
-            seed_lifespan: 250,
+            seed_max_charge_per_tick: 2.0,
+            seed_lifespan: 500,
         ),
 
         transfer: (
-            // Preserve enough energy for roughly the next maintenance step.
-            reserve_consumption_multiplier: 1.1,
+            // Keep a buffer while new organs establish their transport paths.
+            reserve_consumption_multiplier: 12.0,
 
             // `None` removes the historical global 1-energy/tick bottleneck.
             // Branches still share the actually available energy, but a colony
@@ -85,9 +97,9 @@
         ),
 
         collision: (
-            // Growing back into your own trail must be able to erase it; this
-            // is what permits front-based movement, loops and reversals.
-            self_damage: 250,
+            // Blocked growth should not amputate its own supply network.
+            // Explicit KillCell genes still permit remodeling and movement.
+            self_damage: 0,
             foreign_damage: 250,
         ),
 
@@ -104,8 +116,8 @@
         ),
 
         consumption: (
-            pipe: 0.1,
-            leaf: 0.6,
+            pipe: 0.04,
+            leaf: 0.25,
             stem: 0.1,
             seed: 0.02,
             root: 0.2,
@@ -124,7 +136,9 @@
             filter: 3,
         ),
 
-        // Energy required by a Stem to attempt each directional construction.
+        // Irrecoverable attempt overhead. Successful empty-target plans also
+        // reserve newborn energy, biomass and corpse-pollution energy.
+        // Arbitration losers receive their unused endowment back.
         growth_energy: (
             leaf: 1.2,
             root: 0.4,
@@ -138,13 +152,13 @@
 
         generators: (
             leaf: (
-                // Gross sunlight can be strong, but it is no longer a free
-                // everywhere-resource. Local nutrients, canopy spacing and air
-                // quality determine whether the 0.6/tick maintenance is paid.
-                energy_per_tick: 1.2,
+                // Maximum solar input per occupied tile per tick. Actual yield
+                // consumes transported water and is reduced by shade/pollution.
+                // Nutrients help, but detritus exhaustion cannot forbid solar life.
+                energy_per_tick: 3.0,
                 pollution_divisor: 8.0,
                 nutrient_half_saturation: 2.0,
-                nutrient_floor: 0.35,
+                nutrient_floor: 0.8,
                 max_productive_leaf_neighbors: 2,
                 crowded_output_multiplier: 0.35,
             ),
@@ -180,14 +194,14 @@
 
         lifespan: (min: 50, max: 1000),
 
-        initial_mutation_rate: (min: 5, max: 100),
+        initial_mutation_rate: (min: 1, max: 10),
         mutation_rate_min: 1,
         mutation_rate_max: 100,
 
-        // CreateSeed uses a strong inherited burst. A mutation event scans all
-        // 32 genes and each gene is selected with mutation_rate probability.
+        // Preserve working multi-organ programs: fewer edits per affected gene.
+        // Inherited variation remains available through the evolvable rate.
         seed_mutation: (
-            edits_per_affected_gene: 4,
+            edits_per_affected_gene: 1,
         ),
 
         // MultiplySelf is almost clonal but not mathematically perfect. The base
@@ -209,20 +223,18 @@
             (kind: RandomGene, weight: 6),
         ],
 
-        // Slightly supercritical developmental growth. With body-relative
-        // directions this makes genuinely large/random morphologies reachable,
-        // while the harsher ecology (nutrient-dependent leaves, canopy crowding,
-        // toxic wind-borne pollution) is responsible for stopping bad designs.
-        // Total weight = 21, MultiplySelf = 6 => E ~= 1.14.
+        // Near-critical branching leaves room to discover functional organ mixes.
+        // Reduce destructive actions; resource supply and upkeep limit growth.
+        // Total weight = 22, MultiplySelf = 6 => E ~= 1.09.
         direction_actions: [
             (kind: MultiplySelf, weight: 6),
-            (kind: MakeLeaf, weight: 2),
-            (kind: MakeRoot, weight: 2),
+            (kind: MakeLeaf, weight: 3),
+            (kind: MakeRoot, weight: 3),
             (kind: MakeReactor, weight: 1),
             (kind: MakeFilter, weight: 1),
-            (kind: CreateSeed, weight: 1),
-            (kind: Nothing, weight: 2),
-            (kind: KillCell, weight: 6),
+            (kind: CreateSeed, weight: 2),
+            (kind: Nothing, weight: 5),
+            (kind: KillCell, weight: 1),
         ],
 
         conditions: [

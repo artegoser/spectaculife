@@ -103,6 +103,7 @@ pub struct AliveCell {
 
     pub energy: f32,
     pub incoming_energy: f32,
+    pub water: f32,
     pub energy_to: EnergyDirections,
 
     pub parent_dir: Option<CellDir>,
@@ -133,6 +134,7 @@ impl AliveCell {
 
             energy,
             incoming_energy: 0.0,
+            water: 0.0,
             energy_to,
 
             parent_dir,

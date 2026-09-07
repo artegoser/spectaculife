@@ -62,6 +62,7 @@ struct DemandTotal {
 struct GeneratorEffect {
     source: usize,
     energy_gain: f32,
+    water_used: f32,
     soil_output: f32,
     pollution_output: f32,
 }
@@ -165,6 +166,7 @@ struct BirthRequest {
     parent_dir: CellDir,
     lifespan: u16,
     kind: BirthKind,
+    endowment: f32,
     won: bool,
 }
 
@@ -265,7 +267,9 @@ pub fn update_life_step(
     );
     mature_seeds(state, grid, &census.seeds, &config.life);
     repair_energy_paths(grid, genomes, &census.alive, &config.life);
+    transport_water(grid, &census.alive, &config.life);
     generate_energy(grid, &census.generators, &config.life);
+    support_organs(grid, &census.alive, &config.life);
     transfer_energy_one_hop(grid, &census.transferable, &config.life);
     process_genomes(state, grid, genomes, config, &census.stems);
 }
@@ -282,6 +286,7 @@ fn update_maintenance_and_census(
 ) -> LifeCensus {
     debug_assert_eq!(next_soil_energy.len(), grid.len());
     debug_assert_eq!(next_pollution.len(), grid.len());
+    let width = grid.width as usize;
     let (census, deaths) = grid
         .cells_mut()
         .par_iter_mut()
@@ -289,6 +294,12 @@ fn update_maintenance_and_census(
         .fold(
             || (LifeCensus::default(), Vec::<usize>::new()),
             |(mut census, mut deaths), (index, cell)| {
+                // Explicit external water input, bounded by soil storage. Dry and
+                // wet patches make extending a root system useful.
+                let (x, y) = (index % width, index / width);
+                let patch = splitmix64(((x / 32) as u64) ^ ((y / 32) as u64).rotate_left(32));
+                let rainfall = config.water.rainfall_per_tick * (0.2 + 0.8 * (patch % 1024) as f32 / 1023.0);
+                cell.soil.water = (cell.soil.water + rainfall).min(config.water.soil_capacity);
                 cell.soil.energy = next_soil_energy[index];
                 cell.air.pollution = next_pollution[index].round().clamp(0.0, 255.0) as u8;
 
@@ -477,6 +488,110 @@ const fn direction_bit(dir: CellDir) -> u8 {
     }
 }
 
+// Roots alone access groundwater. Water diffuses across actual parent/child
+// tissue edges, never across touching strangers or disconnected fragments.
+fn transport_water(grid: &mut Grid<WorldCell>, alive: &[usize], config: &LifeConfig) {
+    for &index in alive {
+        let cell = &mut grid.cells_mut()[index];
+        if let LifeCell::Alive(life) = &mut cell.life {
+            if life.ty == LifeType::Root {
+                let uptake = cell
+                    .soil
+                    .water
+                    .min(config.water.root_uptake_per_tick)
+                    .min((config.water.cell_capacity - life.water).max(0.0));
+                cell.soil.water -= uptake;
+                life.water += uptake;
+            }
+        }
+    }
+    let mut flows = Vec::new();
+    for &source in alive {
+        let LifeCell::Alive(life) = grid.cells()[source].life else {
+            continue;
+        };
+        for dir in CellDir::ALL {
+            let target = neighbor_index(grid, source, dir);
+            if target <= source {
+                continue;
+            }
+            let LifeCell::Alive(other) = grid.cells()[target].life else {
+                continue;
+            };
+            if connected_tissue(life, other, dir) {
+                flows.push((
+                    source,
+                    target,
+                    (life.water - other.water) * config.water.transfer_fraction,
+                ));
+            }
+        }
+    }
+    // Snapshot differences bound total outflow and prevent same-tick cascades.
+    for (source, target, amount) in flows {
+        if let LifeCell::Alive(life) = &mut grid.cells_mut()[source].life {
+            life.water -= amount;
+        }
+        if let LifeCell::Alive(life) = &mut grid.cells_mut()[target].life {
+            life.water += amount;
+        }
+    }
+}
+
+fn connected_tissue(life: AliveCell, other: AliveCell, dir: CellDir) -> bool {
+    life.organism_id == other.organism_id
+        && (life.parent_dir == Some(dir) || other.parent_dir == Some(dir.opposite()))
+}
+
+// Productive organs feed the directed growth graph. Pipes also return upkeep
+// to connected generators, so a water-supplying root can live after detritus runs out.
+fn support_organs(grid: &mut Grid<WorldCell>, alive: &[usize], config: &LifeConfig) {
+    let mut flows = Vec::new();
+    for &source in alive {
+        let LifeCell::Alive(life) = grid.cells()[source].life else {
+            continue;
+        };
+        if !life.is_pipe() {
+            continue;
+        }
+        let mut available =
+            (life.energy - life.consumption(config) * config.water.organ_reserve_ticks).max(0.0);
+        let mut targets = Vec::new();
+        for dir in CellDir::ALL {
+            let target = neighbor_index(grid, source, dir);
+            let LifeCell::Alive(other) = grid.cells()[target].life else {
+                continue;
+            };
+            // A generator has one supplying parent, preventing duplicate claims.
+            if other.is_energy_generator()
+                && other.parent_dir == Some(dir.opposite())
+                && other.organism_id == life.organism_id
+            {
+                let need = (other.consumption(config) * config.water.organ_reserve_ticks
+                    - other.energy
+                    - other.incoming_energy)
+                    .max(0.0);
+                targets.push((target, need));
+            }
+        }
+        let demand: f32 = targets.iter().map(|t| t.1).sum();
+        let scale = demand_scale(available, demand);
+        for (target, need) in targets {
+            let amount = (need * scale).min(available);
+            available -= amount;
+            flows.push((source, target, amount));
+        }
+    }
+    for (source, target, amount) in flows {
+        if let LifeCell::Alive(life) = &mut grid.cells_mut()[source].life {
+            life.energy -= amount;
+        }
+        if let LifeCell::Alive(life) = &mut grid.cells_mut()[target].life {
+            life.incoming_energy += amount;
+        }
+    }
+}
+
 fn generate_energy(grid: &mut Grid<WorldCell>, generator_indices: &[usize], config: &LifeConfig) {
     // Leaves need no arbitration and are kept as tiny sparse effects.
     let leaf_effects: Vec<GeneratorEffect> = generator_indices
@@ -527,12 +642,12 @@ fn generate_energy(grid: &mut Grid<WorldCell>, generator_indices: &[usize], conf
                     / (cell.air.pollution as f32 / leaf.pollution_divisor.max(0.001))
                         .max(1.0);
 
+                let sunlight = leaf.energy_per_tick * nutrient_factor * crowding_factor * pollution_factor;
+                let energy_gain = sunlight.min(life.water / config.water.leaf_water_per_energy);
                 GeneratorEffect {
                     source,
-                    energy_gain: leaf.energy_per_tick
-                        * nutrient_factor
-                        * crowding_factor
-                        * pollution_factor,
+                    energy_gain,
+                    water_used: energy_gain * config.water.leaf_water_per_energy,
                     soil_output: 0.0,
                     pollution_output: 0.0,
                 }
@@ -651,18 +766,21 @@ fn generate_energy(grid: &mut Grid<WorldCell>, generator_indices: &[usize], conf
             match plan.kind {
                 GeneratorKind::Root => GeneratorEffect {
                     source: plan.source,
+                    water_used: 0.0,
                     energy_gain: allocated * config.generators.root.energy_efficiency,
                     soil_output: allocated * config.generators.root.soil_energy_output,
                     pollution_output: allocated * config.generators.root.pollution_output,
                 },
                 GeneratorKind::Reactor => GeneratorEffect {
                     source: plan.source,
+                    water_used: 0.0,
                     energy_gain: allocated * config.generators.reactor.energy_efficiency,
                     soil_output: 0.0,
                     pollution_output: 0.0,
                 },
                 GeneratorKind::Filter => GeneratorEffect {
                     source: plan.source,
+                    water_used: 0.0,
                     energy_gain: allocated * config.generators.filter.energy_efficiency,
                     soil_output: 0.0,
                     pollution_output: 0.0,
@@ -696,6 +814,7 @@ fn generate_energy(grid: &mut Grid<WorldCell>, generator_indices: &[usize], conf
         let cell = &mut grid.cells_mut()[effect.source];
         if let LifeCell::Alive(mut life) = cell.life {
             life.energy += effect.energy_gain;
+            life.water = (life.water - effect.water_used).max(0.0);
             cell.life = LifeCell::Alive(life);
         }
         cell.soil.energy += effect.soil_output;
@@ -788,8 +907,11 @@ fn transfer_energy_one_hop(grid: &mut Grid<WorldCell>, transferable_indices: &[u
             let to_flow = if life.steps_to_death == 1 {
                 life.energy.max(0.0)
             } else {
+                let reserve_ticks = if life.is_energy_generator() {
+                    config.transfer.reserve_consumption_multiplier.max(config.water.organ_reserve_ticks)
+                } else { config.transfer.reserve_consumption_multiplier };
                 let available = (life.energy
-                    - config.transfer.reserve_consumption_multiplier * life.consumption(config))
+                    - reserve_ticks * life.consumption(config))
                     .max(0.0);
                 match config.transfer.max_energy_per_tick {
                     Some(cap) => available.min(cap),
@@ -951,6 +1073,7 @@ fn process_genomes(
 
         for birth in plan.births {
             if !birth.won || grid.cells()[birth.target].life.is_alive() {
+                center.energy += birth.endowment;
                 continue;
             }
 
@@ -1230,7 +1353,10 @@ fn build_genome_plan(
     let growth_gene = genomes.get(handle).get_gene(next_active_gene);
     let total_energy = growth_gene.energy_capacity(&config.life.growth_energy)
         + CellDir::ALL.into_iter().map(|dir| {
-            birth_endowment(direction_action(&growth_gene, dir), handle, &config.life)
+            let target = neighbor_index(grid, source,
+                resolve_genome_dir(dir, life.heading, config.genetics.relative_directions));
+            if grid.cells()[target].life.is_alive() { 0.0 }
+            else { birth_endowment(direction_action(&growth_gene, dir), handle, &config.life) }
         }).sum::<f32>();
     plan.active_gene_update = Some(next_active_gene);
 
@@ -1445,7 +1571,11 @@ fn collect_kill(
 
 // A victim's actual remaining reserves are debited once, after growth commits.
 // Income is available next tick; simultaneous attackers cannot spend phantom prey.
-fn resolve_predation(grid: &mut Grid<WorldCell>, attacks: &mut Vec<(usize, usize)>, config: &LifeConfig) {
+fn resolve_predation(
+    grid: &mut Grid<WorldCell>,
+    attacks: &mut Vec<(usize, usize)>,
+    config: &LifeConfig,
+) {
     attacks.sort_unstable();
     attacks.dedup();
     let victims: Vec<usize> = attacks.iter().map(|a| a.0).collect();
@@ -1454,16 +1584,22 @@ fn resolve_predation(grid: &mut Grid<WorldCell>, attacks: &mut Vec<(usize, usize
     while i < attacks.len() {
         let target = attacks[i].0;
         let start = i;
-        while i < attacks.len() && attacks[i].0 == target { i += 1; }
+        while i < attacks.len() && attacks[i].0 == target {
+            i += 1;
+        }
         let attackers: Vec<usize> = attacks[start..i].iter().map(|a| a.1)
             .filter(|source| victims.binary_search(source).is_err()
                 && matches!(grid.cells()[*source].life, LifeCell::Alive(life) if life.steps_to_death > 0))
             .collect();
-        if attackers.is_empty() { continue; }
+        if attackers.is_empty() {
+            continue;
+        }
         if let LifeCell::Alive(life) = &mut grid.cells_mut()[target].life {
             let gain = predation_energy_gain(life.energy, config);
             life.energy -= gain;
-            for source in &attackers { payouts.push((*source, gain / attackers.len() as f32)); }
+            for source in &attackers {
+                payouts.push((*source, gain / attackers.len() as f32));
+            }
         }
     }
     for (source, gain) in payouts {
@@ -1476,23 +1612,44 @@ fn resolve_predation(grid: &mut Grid<WorldCell>, attacks: &mut Vec<(usize, usize
 // Pay for newborn reserves and every recoverable unit of corpse fuel. Seeds
 // prepay their later Stem/Pipe biomass so maturation cannot mint chemical energy.
 fn birth_endowment(action: GeneDirectionAction, handle: GenomeHandle, config: &LifeConfig) -> f32 {
-    let ty = match action {
-        GeneDirectionAction::MakeLeaf(_) => LifeType::Leaf,
-        GeneDirectionAction::MakeRoot(_) => LifeType::Root,
-        GeneDirectionAction::MakeReactor(_) => LifeType::Reactor,
-        GeneDirectionAction::MakeFilter(_) => LifeType::Filter,
-        GeneDirectionAction::MultiplySelf(..) => LifeType::Stem(handle),
-        GeneDirectionAction::CreateSeed(_) => LifeType::Seed(SeedState { genome: handle, stem_lifespan: 1 }),
+    let kind = match action {
+        GeneDirectionAction::MakeLeaf(_) => BirthKind::Leaf,
+        GeneDirectionAction::MakeRoot(_) => BirthKind::Root,
+        GeneDirectionAction::MakeReactor(_) => BirthKind::Reactor,
+        GeneDirectionAction::MakeFilter(_) => BirthKind::Filter,
+        GeneDirectionAction::MultiplySelf(_, child_gene) => BirthKind::Stem { child_gene },
+        GeneDirectionAction::CreateSeed(_) => BirthKind::Seed,
         _ => return 0.0,
     };
-    let mut mass = ty.organics(config);
-    if ty.is_fertile() || ty.is_seed() {
-        mass = mass.max(config.organics.stem).max(config.organics.pipe);
+    kind.endowment(handle, config)
+}
+
+impl BirthKind {
+    fn endowment(&self, handle: GenomeHandle, config: &LifeConfig) -> f32 {
+        let ty = match self {
+            Self::Leaf => LifeType::Leaf,
+            Self::Root => LifeType::Root,
+            Self::Reactor => LifeType::Reactor,
+            Self::Filter => LifeType::Filter,
+            Self::Stem { .. } => LifeType::Stem(handle),
+            Self::Seed => LifeType::Seed(SeedState {
+                genome: handle,
+                stem_lifespan: 1,
+            }),
+        };
+        let mut mass = ty.organics(config);
+        if ty.is_fertile() || ty.is_seed() {
+            mass = mass.max(config.organics.stem).max(config.organics.pipe);
+        }
+        let pollution =
+            (mass / config.death.pollution_per_organic_divisor).max(config.death.minimum_pollution);
+        let reserve = if ty.is_seed() {
+            config.reproduction.seed_initial_energy
+        } else {
+            ty.consumption(config) * config.newborn_energy_consumption_multiplier
+        };
+        reserve + mass as f32 + pollution as f32
     }
-    let pollution = (mass / config.death.pollution_per_organic_divisor).max(config.death.minimum_pollution);
-    let reserve = if ty.is_seed() { config.reproduction.seed_initial_energy }
-        else { ty.consumption(config) * config.newborn_energy_consumption_multiplier };
-    reserve + mass as f32 + pollution as f32
 }
 
 #[inline]
@@ -1528,6 +1685,7 @@ fn collect_birth_or_collision(
             target,
             parent_dir: dir.opposite(),
             lifespan,
+            endowment: kind.endowment(plan.handle, config),
             kind,
             won: false,
         }),
@@ -1743,6 +1901,47 @@ mod tests {
         cell
     }
 
+
+    #[test]
+    fn water_is_conserved_and_moves_only_one_tissue_edge() {
+        let config = SimulationConfig::load();
+        let mut grid = Grid::<WorldCell>::new(5, 3);
+        for index in [6, 7, 8] {
+            grid.cells_mut()[index] = pipe(0.0, EnergyDirections::default());
+            if let LifeCell::Alive(life) = &mut grid.cells_mut()[index].life {
+                life.parent_dir = Some(CellDir::Left);
+            }
+        }
+        if let LifeCell::Alive(life) = &mut grid.cells_mut()[6].life { life.water = 4.0; }
+        transport_water(&mut grid, &[6, 7, 8], &config.life);
+        let water = |grid: &Grid<WorldCell>, i: usize| match grid.cells()[i].life {
+            LifeCell::Alive(life) => life.water, _ => 0.0,
+        };
+        assert_eq!(water(&grid, 6) + water(&grid, 7) + water(&grid, 8), 4.0);
+        assert!(water(&grid, 7) > 0.0);
+        assert_eq!(water(&grid, 8), 0.0);
+        if let LifeCell::Alive(life) = &mut grid.cells_mut()[8].life { life.organism_id = 2; }
+        transport_water(&mut grid, &[6, 7, 8], &config.life);
+        assert_eq!(water(&grid, 8), 0.0, "foreign tissue cannot steal water");
+    }
+
+    #[test]
+    fn root_uptake_debits_soil_and_dry_leaves_produce_nothing() {
+        let config = SimulationConfig::load();
+        let mut grid = Grid::<WorldCell>::new(5, 3);
+        grid.cells_mut()[6].soil.water = 0.5;
+        grid.cells_mut()[6].life = LifeCell::Alive(AliveCell::new(
+            LifeType::Root, 1, 0.0, EnergyDirections::default(), None, 100));
+        grid.cells_mut()[8].life = LifeCell::Alive(AliveCell::new(
+            LifeType::Leaf, 1, 0.0, EnergyDirections::default(), None, 100));
+        grid.cells_mut()[8].soil.organics = 16;
+        transport_water(&mut grid, &[6, 8], &config.life);
+        let LifeCell::Alive(root) = grid.cells()[6].life else { panic!() };
+        assert_eq!(root.water, 0.5);
+        assert_eq!(grid.cells()[6].soil.water, 0.0);
+        generate_energy(&mut grid, &[8], &config.life);
+        assert_eq!(grid.cells()[8].life.energy(), 0.0);
+    }
 
     #[test]
     fn predators_share_one_debited_prey_reserve() {
@@ -2154,14 +2353,9 @@ mod tests {
         let center = 12;
 
         let make_leaf = || {
-            LifeCell::Alive(AliveCell::new(
-                LifeType::Leaf,
-                1,
-                0.0,
-                EnergyDirections::default(),
-                None,
-                100,
-            ))
+            let mut leaf = AliveCell::new(LifeType::Leaf, 1, 0.0, EnergyDirections::default(), None, 100);
+            leaf.water = config.life.water.cell_capacity;
+            LifeCell::Alive(leaf)
         };
 
         grid.cells_mut()[center].life = make_leaf();

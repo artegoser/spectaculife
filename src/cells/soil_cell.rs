@@ -2,4 +2,5 @@
 pub struct SoilCell {
     pub organics: u8,
     pub energy: f32,
+    pub water: f32,
 }
